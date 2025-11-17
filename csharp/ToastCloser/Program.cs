@@ -14,6 +14,11 @@ namespace ToastCloser
 {
     class Program
     {
+        // track last real user input from keyboard/mouse (Environment.TickCount)
+        private static uint _lastKeyboardTick = 0;
+        private static uint _lastMouseTick = 0;
+        private static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0,0);
+
         static void Main(string[] args)
         {
             double minSeconds = 10.0;
@@ -75,10 +80,49 @@ namespace ToastCloser
             using var automation = new UIA3Automation();
             var cf = new ConditionFactory(new UIA3PropertyLibrary());
 
+            // initialize cursor position
+            try { NativeMethods.GetCursorPos(out _lastCursorPos); } catch { }
+
             while (true)
             {
                 try
                 {
+                    // Update keyboard/mouse last-activity ticks
+                    try
+                    {
+                        // mouse
+                        if (NativeMethods.GetCursorPos(out var curPos))
+                        {
+                            if (curPos.X != _lastCursorPos.X || curPos.Y != _lastCursorPos.Y)
+                            {
+                                _lastCursorPos = curPos;
+                                _lastMouseTick = (uint)Environment.TickCount;
+                                LogConsole($"Mouse moved to {_lastCursorPos.X},{_lastCursorPos.Y}");
+                            }
+                        }
+                    }
+                    catch { }
+
+                    try
+                    {
+                        // keyboard: if any key currently down, update keyboard tick
+                        for (int vk = 0x01; vk <= 0xFE; vk++)
+                        {
+                            try
+                            {
+                                short s = NativeMethods.GetAsyncKeyState(vk);
+                                bool down = (s & 0x8000) != 0;
+                                if (down)
+                                {
+                                    _lastKeyboardTick = (uint)Environment.TickCount;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+
                     var desktop = automation.GetDesktop();
 
                     // Primary search: class only (AutomationId is not required)
@@ -112,12 +156,16 @@ namespace ToastCloser
                                         continue;
 
                                     // find a TextBlock descendant whose Name contains "www.youtube.com"
-                                    var textBlockCond = cf.ByClassName("TextBlock").And(cf.ByControlType(ControlType.Text));
-                                    var tb = w.FindFirstDescendant(textBlockCond);
-                                    if (tb != null && !string.IsNullOrEmpty(tb.Name) && tb.Name.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0)
-                                    {
-                                        list.Add(w);
-                                    }
+                                        var textBlockCond = cf.ByClassName("TextBlock").And(cf.ByControlType(ControlType.Text));
+                                        var tb = w.FindFirstDescendant(textBlockCond);
+                                        if (tb != null)
+                                        {
+                                            var tbName = SafeGetName(tb);
+                                            if (!string.IsNullOrEmpty(tbName) && tbName.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                                            {
+                                                list.Add(w);
+                                            }
+                                        }
                                 }
                                 catch { }
                             }
@@ -135,28 +183,13 @@ namespace ToastCloser
                         {
                             // compute key early so logs can be prefixed with it
                             string keyCandidate = MakeKey(w);
-                            var n = w.Name ?? string.Empty;
+                            var n = SafeGetName(w);
                             var cn = w.ClassName ?? string.Empty;
                             var aidx = w.Properties.AutomationId.ValueOrDefault ?? string.Empty;
-                            var pid = w.Properties.ProcessId.ValueOrDefault;
+                            var pid = SafeGetProcessId(w);
                             var rect = w.BoundingRectangle;
                             // attempt to read RuntimeId (may be array)
-                            string runtimeIdStr = string.Empty;
-                            try
-                            {
-                                var rid = w.Properties.RuntimeId.ValueOrDefault;
-                                if (rid != null)
-                                {
-                                    if (rid is System.Collections.IEnumerable ie)
-                                    {
-                                        var parts = new System.Collections.Generic.List<string>();
-                                        foreach (var x in ie) parts.Add(x?.ToString());
-                                        runtimeIdStr = string.Join("_", parts);
-                                    }
-                                    else runtimeIdStr = rid.ToString();
-                                }
-                            }
-                            catch { }
+                            var runtimeIdStr = SafeGetRuntimeIdString(w);
 
                             logger.Debug($"key={keyCandidate} Candidate[{_i}]: name={n} class={cn} aid={aidx} pid={pid} rid={runtimeIdStr} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
                         }
@@ -179,6 +212,8 @@ namespace ToastCloser
                     // Re-iterate through found for existing processing (we will process again below)
                     // postedHwnds: per-scan set of HWNDs we've already sent WM_CLOSE to, so we only post once
                     var postedHwnds = new HashSet<long>();
+                    // actionCenterToggled: ensure we only toggle Action Center once per scan
+                    var actionCenterToggled = false;
                     foreach (var w in found)
                     {
                         string key = MakeKey(w);
@@ -211,7 +246,7 @@ namespace ToastCloser
                                 {
                                     try
                                     {
-                                        var tname = tn.Name ?? string.Empty;
+                                        var tname = SafeGetName(tn);
                                         if (!string.IsNullOrWhiteSpace(tname)) parts.Add(tname.Trim());
                                     }
                                     catch { }
@@ -223,7 +258,7 @@ namespace ToastCloser
                                     // filter out parts that are contained in the window name to avoid duplicate display
                                     try
                                     {
-                                        var nameLower = (w.Name ?? string.Empty).ToLowerInvariant();
+                                        var nameLower = SafeGetName(w).ToLowerInvariant();
                                         var filtered = parts.Where(p => !nameLower.Contains((p ?? string.Empty).ToLowerInvariant())).ToList();
                                         if (filtered.Count == 0)
                                         {
@@ -240,8 +275,8 @@ namespace ToastCloser
                             }
                             catch { }
 
-                            var pidVal2 = w.Properties.ProcessId.ValueOrDefault;
-                            var safeName2 = (w.Name ?? string.Empty).Replace('\n', ' ').Replace('\r', ' ').Trim();
+                            var pidVal2 = SafeGetProcessId(w);
+                            var safeName2 = SafeGetName(w).Replace('\n', ' ').Replace('\r', ' ').Trim();
                             var cleanName = CleanNotificationName(safeName2, contentSummary);
                             tracked[key] = new TrackedInfo { FirstSeen = now, GroupId = assignedGroup, Method = methodStr, Pid = pidVal2, ShortName = cleanName };
 
@@ -286,7 +321,7 @@ namespace ToastCloser
                             {
                                 try
                                 {
-                                    var tname = tn.Name ?? string.Empty;
+                                    var tname = SafeGetName(tn);
                                     if (!string.IsNullOrWhiteSpace(tname)) partsEx.Add(tname.Trim());
                                 }
                                 catch { }
@@ -320,30 +355,99 @@ namespace ToastCloser
                             {
                                 try
                                 {
-                                    var idle = GetIdleMilliseconds();
-                                    if (idle < (uint)preserveHistoryIdleMs)
+                                    // Prefer real keyboard/mouse timestamps over system LastInput to avoid DirectInput noise.
+                                    uint lastSystemTick = 0;
+                                    try
                                     {
-                                        LogConsole($"key={key} Skipping preserve-history because user active (idle={idle}ms < {preserveHistoryIdleMs}ms)");
-                                        logger.Debug($"key={key} Skipping preserve-history because user active (idle={idle}ms < {preserveHistoryIdleMs}ms)");
+                                        var li2 = new NativeMethods.LASTINPUTINFO();
+                                        li2.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.LASTINPUTINFO));
+                                        if (NativeMethods.GetLastInputInfo(ref li2)) lastSystemTick = li2.dwTime;
+                                    }
+                                    catch { }
+
+                                    uint lastKbMouseTick = Math.Max(_lastKeyboardTick, _lastMouseTick);
+
+                                    // If we have a real keyboard/mouse timestamp, measure delta between system LastInput and that timestamp.
+                                    bool treatAsActive = false;
+                                    if (lastKbMouseTick != 0 && lastSystemTick != 0)
+                                    {
+                                        uint delta;
+                                        if (lastSystemTick >= lastKbMouseTick) delta = lastSystemTick - lastKbMouseTick;
+                                        else delta = (uint)((uint.MaxValue - lastKbMouseTick) + lastSystemTick + 1);
+                                        if (delta <= (uint)preserveHistoryIdleMs)
+                                        {
+                                            treatAsActive = true;
+                                            LogConsole($"key={key} Skipping preserve-history because recent keyboard/mouse activity detected (delta={delta}ms <= {preserveHistoryIdleMs}ms)");
+                                            logger.Debug($"key={key} Skipping preserve-history because recent keyboard/mouse activity detected (delta={delta}ms <= {preserveHistoryIdleMs}ms)");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Fallback: no keyboard/mouse timestamp available — use system idle as before
+                                        var sysIdle = GetIdleMilliseconds();
+                                        if (sysIdle < (uint)preserveHistoryIdleMs)
+                                        {
+                                            treatAsActive = true;
+                                            LogConsole($"key={key} Skipping preserve-history because user active (system idle={sysIdle}ms < {preserveHistoryIdleMs}ms)");
+                                            logger.Debug($"key={key} Skipping preserve-history because user active (system idle={sysIdle}ms < {preserveHistoryIdleMs}ms)");
+                                        }
+                                    }
+
+                                    if (treatAsActive)
+                                    {
                                         closed = false; // do not mark closed; retry next poll
                                     }
                                     else
                                     {
-                                        if (!IsActionCenterOpen())
+                                        if (!actionCenterToggled)
                                         {
-                                            LogConsole($"key={key} Opening Action Center to preserve history for this toast...");
-                                            logger.Info($"key={key} Opening Action Center to preserve history for this toast...");
+                                            // collect current visible toasts (from 'found') and log them
+                                            var present = new List<(string key, string name)>();
+                                            foreach (var fe in found)
+                                            {
+                                                try
+                                                {
+                                                    var k = MakeKey(fe);
+                                                    var nm = SafeGetName(fe).Replace('\n', ' ').Replace('\r', ' ').Trim();
+                                                    present.Add((k, nm));
+                                                }
+                                                catch { }
+                                            }
+                                            var dedup = present.GroupBy(p => p.key).Select(g => g.First()).ToList();
+                                            var summary = string.Join(" | ", dedup.Select(d => $"key={d.key} name=\"{d.name}\""));
+                                            LogConsole($"key={key} Opening Action Center to preserve history for {dedup.Count} toasts: {summary}");
+                                            logger.Info($"key={key} Opening Action Center to preserve history for {dedup.Count} toasts: {summary}");
+
                                             ToggleActionCenterViaWinA();
                                             LogConsole($"key={key} Action Center toggled (preserve-history)");
                                             logger.Info($"key={key} Action Center toggled (preserve-history)");
+
+                                            // mark all present toasts as closed by preserve-history and remove from tracked
+                                            foreach (var d in dedup)
+                                            {
+                                                try
+                                                {
+                                                    if (tracked.ContainsKey(d.key))
+                                                    {
+                                                        tracked.Remove(d.key);
+                                                        var cbMsg = $"key={d.key} ClosedBy=PreserveHistory | name=\"{d.name}\"";
+                                                        LogConsole(cbMsg);
+                                                        logger.Info(cbMsg);
+                                                    }
+                                                }
+                                                catch { }
+                                            }
+                                            actionCenterToggled = true;
+                                            closed = true;
                                         }
                                         else
                                         {
-                                            LogConsole($"key={key} Action Center already open; toggling to ensure history preserved");
-                                            logger.Info($"key={key} Action Center already open; toggling to ensure history preserved");
-                                            ToggleActionCenterViaWinA();
+                                            // Action Center already toggled this scan; assume this toast moved too
+                                            LogConsole($"key={key} Action Center already toggled this scan; assuming toast moved to history");
+                                            logger.Info($"key={key} Action Center already toggled this scan; assuming toast moved to history");
+                                            if (tracked.ContainsKey(key)) tracked.Remove(key);
+                                            closed = true;
                                         }
-                                        closed = true; // assume toast moved to history
                                     }
                                 }
                                 catch (Exception ex)
@@ -354,7 +458,7 @@ namespace ToastCloser
                             else
                             {
                                 // NEW: Try WM_CLOSE first to see if closing via WM_CLOSE preserves history.
-                                string closedBy = null;
+                                string? closedBy = null;
                                 try
                                 {
                                     // Determine host HWND: prefer element's NativeWindowHandle, else try to find host CoreWindow two levels up
@@ -531,7 +635,7 @@ namespace ToastCloser
                         if (rid is System.Collections.IEnumerable ie)
                         {
                             var parts = new System.Collections.Generic.List<string>();
-                            foreach (var x in ie) parts.Add(x?.ToString());
+                            foreach (var x in ie) parts.Add(x?.ToString() ?? string.Empty);
                             return "rid:" + string.Join("_", parts);
                         }
                         else
@@ -550,6 +654,57 @@ namespace ToastCloser
             catch { return Guid.NewGuid().ToString(); }
         }
 
+        // Safely get the Name of an AutomationElement without throwing when the property is unsupported
+        static string SafeGetName(FlaUI.Core.AutomationElements.AutomationElement e)
+        {
+            if (e == null) return string.Empty;
+            try
+            {
+                var v = e.Properties.Name.ValueOrDefault;
+                if (v != null) return v;
+            }
+            catch { }
+            try
+            {
+                return e.Name ?? string.Empty;
+            }
+            catch { }
+            return string.Empty;
+        }
+
+        // Safely get ProcessId without throwing when UIA provider fails
+        static int SafeGetProcessId(FlaUI.Core.AutomationElements.AutomationElement e)
+        {
+            if (e == null) return 0;
+            try
+            {
+                return e.Properties.ProcessId.ValueOrDefault;
+            }
+            catch { return 0; }
+        }
+
+        // Safely get RuntimeId as a string if available
+        static string SafeGetRuntimeIdString(FlaUI.Core.AutomationElements.AutomationElement e)
+        {
+            if (e == null) return string.Empty;
+            try
+            {
+                var rid = e.Properties.RuntimeId.ValueOrDefault;
+                if (rid != null)
+                {
+                    if (rid is System.Collections.IEnumerable ie)
+                    {
+                        var parts = new System.Collections.Generic.List<string>();
+                        foreach (var x in ie) parts.Add(x?.ToString() ?? string.Empty);
+                        return string.Join("_", parts);
+                    }
+                    return rid.ToString() ?? string.Empty;
+                }
+            }
+            catch { }
+            return string.Empty;
+        }
+
         // Console output helper that prefixes the human-friendly timestamp
         private static void LogConsole(string m)
         {
@@ -560,9 +715,9 @@ namespace ToastCloser
         {
             public DateTime FirstSeen { get; set; }
             public int GroupId { get; set; }
-            public string Method { get; set; }
+            public string? Method { get; set; }
             public int Pid { get; set; }
-            public string ShortName { get; set; }
+            public string? ShortName { get; set; }
         }
 
         // Action Center helper: detect if Action Center window is present and toggle it via Win+A using SendInput
@@ -780,6 +935,14 @@ namespace ToastCloser
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int vKey);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out System.Drawing.Point pt);
+
         public const uint GA_PARENT = 1;
     }
+
+    
 }
