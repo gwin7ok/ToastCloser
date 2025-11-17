@@ -176,40 +176,13 @@ namespace ToastCloser
                     }
                     catch { }
 
-                    // If CoreWindow-based search yielded nothing, fall back to previous class-only search or strict fallback below
+                    // No additional fallback: use only CoreWindow->ScrollViewer->FlexibleToastView discovery results
                     FlaUI.Core.AutomationElements.AutomationElement[] found = foundList.ToArray();
                     if (found.Length == 0)
                     {
-                        // try the previous simple class search first
-                        var cond = cf.ByClassName("FlexibleToastView");
-                        var byClass = desktop.FindAllDescendants(cond);
-                        if (byClass != null && byClass.Length > 0)
-                        {
-                            // filter by Attribution containing youtube
-                            var temp = new List<FlaUI.Core.AutomationElements.AutomationElement>();
-                            foreach (var w in byClass)
-                            {
-                                try
-                                {
-                                    var tbAttrCond = cf.ByClassName("TextBlock").And(cf.ByAutomationId("Attribution")).And(cf.ByControlType(ControlType.Text));
-                                    var tbAttr = w.FindFirstDescendant(tbAttrCond);
-                                    if (tbAttr != null)
-                                    {
-                                        var attr = SafeGetName(tbAttr);
-                                        if (!string.IsNullOrEmpty(attr) && attr.IndexOf("youtube", StringComparison.OrdinalIgnoreCase) >= 0)
-                                        {
-                                            temp.Add(w);
-                                        }
-                                    }
-                                }
-                                catch { }
-                            }
-                            found = temp.ToArray();
-                        }
-                        else
-                        {
-                            found = new FlaUI.Core.AutomationElements.AutomationElement[0];
-                        }
+                        LogConsole("No FlexibleToastView candidates found via CoreWindow path; ending search for this scan.");
+                        found = new FlaUI.Core.AutomationElements.AutomationElement[0];
+                        usedFallback = false;
                     }
 
                     // Skip heavy fallback full-tree scans; rely only on CoreWindow-based discovery and quick class search above.
