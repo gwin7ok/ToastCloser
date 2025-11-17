@@ -5,3 +5,20 @@ csharp/ToastCloser/bin/
 csharp/ToastCloser/obj/
 csharp/ToastCloser/obj/Debug/net7.0-windows/ref/ToastCloser.dll
 .vscode/run-in-new-window.log
+
+# Common ignores for .NET projects and editor files
+**/bin/
+**/obj/
+*.log
+auto_closer.log
+.vs/
+.vscode/*.log
+*.user
+*.suo
+*.cache
+
+# tools build outputs
+tools/**/bin/
+tools/**/obj/
+
+
