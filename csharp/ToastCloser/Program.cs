@@ -129,54 +129,95 @@ namespace ToastCloser
                     var searchStart = DateTime.UtcNow;
                     LogConsole("Toast search: start");
 
-                    // Primary search: class only (AutomationId is not required)
-                    var cond = cf.ByClassName("FlexibleToastView");
-                    var found = desktop.FindAllDescendants(cond);
+                    // Primary search: prefer CoreWindow -> ScrollViewer -> FlexibleToastView chain
+                    // and only select toasts whose Attribution TextBlock contains 'youtube' (or 'www.youtube.com').
+                    var foundList = new List<FlaUI.Core.AutomationElements.AutomationElement>();
                     bool usedFallback = false;
 
-                    // Fallback: strict pattern detection for YouTube toast
-                    if (found == null || found.Length == 0)
+                    try
                     {
-                        if (skipFallback)
+                        // try CoreWindow by name '新しい通知' first
+                        var coreByNameCond = cf.ByClassName("Windows.UI.Core.CoreWindow").And(cf.ByName("新しい通知"));
+                        var coreElement = desktop.FindFirstDescendant(coreByNameCond);
+                        if (coreElement == null)
                         {
-                            LogConsole("No toasts found by class; skipping fallback strict-scan as requested.");
-                            found = new FlaUI.Core.AutomationElements.AutomationElement[0];
+                            // fallback to any CoreWindow
+                            coreElement = desktop.FindFirstDescendant(cf.ByClassName("Windows.UI.Core.CoreWindow"));
                         }
-                        else
+
+                        if (coreElement != null)
                         {
-                            LogConsole("No toasts found by class; performing fallback strict-scan for YouTube toasts...");
-                            // Scan windows and detect elements that satisfy all independent conditions:
-                            // AutomationId == "PriorityToastView" AND ClassName == "FlexibleToastView"
-                            // AND contains a descendant with ClassName "TextBlock" and Name contains "www.youtube.com"
-                            var all = desktop.FindAllDescendants(cf.ByControlType(ControlType.Window));
-                            var list = new List<FlaUI.Core.AutomationElements.AutomationElement>();
-                            foreach (var w in all)
+                            var scroll = coreElement.FindFirstDescendant(cf.ByClassName("ScrollViewer"));
+                            if (scroll != null)
+                            {
+                                var toasts = scroll.FindAllDescendants(cf.ByClassName("FlexibleToastView"));
+                                if (toasts != null && toasts.Length > 0)
+                                {
+                                    foreach (var t in toasts)
+                                    {
+                                        try
+                                        {
+                                            var tbAttrCond = cf.ByClassName("TextBlock").And(cf.ByAutomationId("Attribution")).And(cf.ByControlType(ControlType.Text));
+                                            var tbAttr = t.FindFirstDescendant(tbAttrCond);
+                                            if (tbAttr != null)
+                                            {
+                                                var attr = SafeGetName(tbAttr);
+                                                if (!string.IsNullOrEmpty(attr) && attr.IndexOf("youtube", StringComparison.OrdinalIgnoreCase) >= 0)
+                                                {
+                                                    foundList.Add(t);
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // If CoreWindow-based search yielded nothing, fall back to previous class-only search or strict fallback below
+                    FlaUI.Core.AutomationElements.AutomationElement[] found = foundList.ToArray();
+                    if (found.Length == 0)
+                    {
+                        // try the previous simple class search first
+                        var cond = cf.ByClassName("FlexibleToastView");
+                        var byClass = desktop.FindAllDescendants(cond);
+                        if (byClass != null && byClass.Length > 0)
+                        {
+                            // filter by Attribution containing youtube
+                            var temp = new List<FlaUI.Core.AutomationElements.AutomationElement>();
+                            foreach (var w in byClass)
                             {
                                 try
                                 {
-                                    // do not require AutomationId; only require ClassName
-                                    var cname = w.ClassName ?? string.Empty;
-                                    if (!string.Equals(cname, "FlexibleToastView", StringComparison.OrdinalIgnoreCase))
-                                        continue;
-
-                                    // find a TextBlock descendant whose Name contains "www.youtube.com"
-                                        var textBlockCond = cf.ByClassName("TextBlock").And(cf.ByControlType(ControlType.Text));
-                                        var tb = w.FindFirstDescendant(textBlockCond);
-                                        if (tb != null)
+                                    var tbAttrCond = cf.ByClassName("TextBlock").And(cf.ByAutomationId("Attribution")).And(cf.ByControlType(ControlType.Text));
+                                    var tbAttr = w.FindFirstDescendant(tbAttrCond);
+                                    if (tbAttr != null)
+                                    {
+                                        var attr = SafeGetName(tbAttr);
+                                        if (!string.IsNullOrEmpty(attr) && attr.IndexOf("youtube", StringComparison.OrdinalIgnoreCase) >= 0)
                                         {
-                                            var tbName = SafeGetName(tb);
-                                            if (!string.IsNullOrEmpty(tbName) && tbName.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                list.Add(w);
-                                            }
+                                            temp.Add(w);
                                         }
+                                    }
                                 }
                                 catch { }
                             }
-                            found = list.ToArray();
-                            usedFallback = true;
-                            LogConsole($"Fallback (strict) found {found.Length} candidates");
+                            found = temp.ToArray();
                         }
+                        else
+                        {
+                            found = new FlaUI.Core.AutomationElements.AutomationElement[0];
+                        }
+                    }
+
+                    // Skip heavy fallback full-tree scans; rely only on CoreWindow-based discovery and quick class search above.
+                    if (found == null || found.Length == 0)
+                    {
+                        LogConsole("No toasts found by CoreWindow-based search; skipping heavy fallback to avoid long scans.");
+                        found = new FlaUI.Core.AutomationElements.AutomationElement[0];
+                        usedFallback = false;
                     }
 
                     var searchEnd = DateTime.UtcNow;
