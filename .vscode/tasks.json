@@ -2,12 +2,14 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "MSBuild: build ToastCloser",
+      "label": "dotnet: build ToastCloser",
       "type": "shell",
-      "command": "msbuild",
+      "command": "dotnet",
       "args": [
+        "build",
         "${workspaceFolder}\\csharp\\ToastCloser\\ToastCloser.csproj",
-        "/p:Configuration=Debug"
+        "-c",
+        "Debug"
       ],
       "group": {
         "kind": "build",
@@ -15,28 +17,25 @@
       },
       "presentation": {
         "reveal": "always",
-        "panel": "shared"
+        "panel": "shared",
+        "showReuseMessage": false
       },
       "problemMatcher": ["$msCompile"]
     },
     {
-      "label": "dotnet: build ToastCloser",
+      "label": "Run: Workspace Runner",
       "type": "shell",
-      "command": "dotnet",
+      "command": "pwsh",
       "args": [
-        "build",
-        "${workspaceFolder}\\csharp\\ToastCloser\\ToastCloser.csproj"
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}\\.vscode\\run-in-new-window.ps1",
+        "${workspaceFolder}",
+        "true",
+        "10",
+        "30",
+        "15"
       ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "problemMatcher": ["$msCompile"]
-    },
-    {
-      "label": "Run: ToastCloser",
-      "type": "shell",
-      "command": "${workspaceFolder}\\csharp\\ToastCloser\\bin\\Debug\\ToastCloser.exe",
       "presentation": {
         "reveal": "always",
         "panel": "shared"
