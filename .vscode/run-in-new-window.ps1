@@ -32,11 +32,13 @@ $diagLog = Join-Path $workspaceFolder '.vscode\run-in-new-window.log'
 
 # Start a new PowerShell window and run the command.
 if ($keepOpenBool) {
-  # Use cmd.exe "start" to reliably open a new console window and keep it open with -NoExit
-  $startArgs = @('/c', 'start', 'pwsh', '-NoProfile', '-NoExit', '-Command', $dotnetCmd)
-  Start-Process -FilePath 'cmd.exe' -ArgumentList $startArgs -WindowStyle Normal
+  # Start pwsh directly in a new window and keep it open (-NoExit).
+  # Using Start-Process directly avoids an intermediate cmd.exe start which
+  # can introduce transient initialization/race issues on some systems.
+  $pwshArgs = @('-NoProfile', '-NoExit', '-Command', $dotnetCmd)
+  Start-Process -FilePath 'pwsh' -ArgumentList $pwshArgs -WindowStyle Normal
 } else {
   # Start pwsh without -NoExit (window will close when command completes)
-  $startArgs = @('-NoProfile', '-Command', $dotnetCmd)
-  Start-Process -FilePath 'pwsh' -ArgumentList $startArgs -WindowStyle Normal
+  $pwshArgs = @('-NoProfile', '-Command', $dotnetCmd)
+  Start-Process -FilePath 'pwsh' -ArgumentList $pwshArgs -WindowStyle Normal
 }

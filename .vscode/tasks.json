@@ -34,7 +34,10 @@
         "true",
         "10",
         "30",
-        "15"
+        "2",
+        "--skip-fallback",
+        "--preserve-history", 
+        "--preserve-history-idle=2000"
       ],
       "presentation": {
         "reveal": "always",

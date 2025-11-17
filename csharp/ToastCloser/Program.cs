@@ -7,6 +7,7 @@ using FlaUI.Core.Definitions;
 using FlaUI.Core.Conditions;
 using FlaUI.Core.AutomationElements;
 using System.Text.RegularExpressions;
+using System.Drawing;
 using FlaUI.UIA3;
 
 namespace ToastCloser
@@ -19,6 +20,10 @@ namespace ToastCloser
             double maxSeconds = 30.0;
             double poll = 1.0;
             bool detectOnly = false;
+            bool preserveHistory = false;
+            bool wmCloseOnly = false;
+            bool skipFallback = false;
+            int preserveHistoryIdleMs = 2000; // default: require 2s idle
 
             // Parse positional args first (min, max, poll) but also allow a named flag --detect-only or --no-auto-close
             var argList = args?.ToList() ?? new List<string>();
@@ -28,12 +33,35 @@ namespace ToastCloser
                 // remove flag so positional parsing below is simpler
                 argList = argList.Where(a => a != "--detect-only" && a != "--no-auto-close").ToList();
             }
+            if (argList.Contains("--preserve-history"))
+            {
+                preserveHistory = true;
+                argList = argList.Where(a => a != "--preserve-history").ToList();
+            }
+            if (argList.Contains("--wm-close-only"))
+            {
+                wmCloseOnly = true;
+                argList = argList.Where(a => a != "--wm-close-only").ToList();
+            }
+            if (argList.Contains("--skip-fallback"))
+            {
+                skipFallback = true;
+                argList = argList.Where(a => a != "--skip-fallback").ToList();
+            }
+            // allow optional idle-ms override: --preserve-history-idle=ms
+            var idleArg = argList.FirstOrDefault(a => a.StartsWith("--preserve-history-idle="));
+            if (!string.IsNullOrEmpty(idleArg))
+            {
+                var part = idleArg.Split('=');
+                if (part.Length == 2 && int.TryParse(part[1], out var v)) preserveHistoryIdleMs = Math.Max(0, v);
+                argList = argList.Where(a => !a.StartsWith("--preserve-history-idle=")).ToList();
+            }
 
             if (argList.Count >= 1) double.TryParse(argList[0], out minSeconds);
             if (argList.Count >= 2) double.TryParse(argList[1], out maxSeconds);
             if (argList.Count >= 3) double.TryParse(argList[2], out poll);
 
-            LogConsole($"ToastCloser starting (min={minSeconds} max={maxSeconds} poll={poll} detectOnly={detectOnly})");
+            LogConsole($"ToastCloser starting (min={minSeconds} max={maxSeconds} poll={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} wmCloseOnly={wmCloseOnly} skipFallback={skipFallback})");
 
             var tracked = new Dictionary<string, TrackedInfo>();
             var groups = new Dictionary<int, DateTime>();
@@ -61,34 +89,42 @@ namespace ToastCloser
                     // Fallback: strict pattern detection for YouTube toast
                     if (found == null || found.Length == 0)
                     {
-                        LogConsole("No toasts found by class; performing fallback strict-scan for YouTube toasts...");
-                        // Scan windows and detect elements that satisfy all independent conditions:
-                        // AutomationId == "PriorityToastView" AND ClassName == "FlexibleToastView"
-                        // AND contains a descendant with ClassName "TextBlock" and Name contains "www.youtube.com"
-                        var all = desktop.FindAllDescendants(cf.ByControlType(ControlType.Window));
-                        var list = new List<FlaUI.Core.AutomationElements.AutomationElement>();
-                        foreach (var w in all)
+                        if (skipFallback)
                         {
-                            try
-                            {
-                                // do not require AutomationId; only require ClassName
-                                var cname = w.ClassName ?? string.Empty;
-                                if (!string.Equals(cname, "FlexibleToastView", StringComparison.OrdinalIgnoreCase))
-                                    continue;
-
-                                // find a TextBlock descendant whose Name contains "www.youtube.com"
-                                var textBlockCond = cf.ByClassName("TextBlock").And(cf.ByControlType(ControlType.Text));
-                                var tb = w.FindFirstDescendant(textBlockCond);
-                                if (tb != null && !string.IsNullOrEmpty(tb.Name) && tb.Name.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0)
-                                {
-                                    list.Add(w);
-                                }
-                            }
-                            catch { }
+                            LogConsole("No toasts found by class; skipping fallback strict-scan as requested.");
+                            found = new FlaUI.Core.AutomationElements.AutomationElement[0];
                         }
-                        found = list.ToArray();
-                        usedFallback = true;
-                        LogConsole($"Fallback (strict) found {found.Length} candidates");
+                        else
+                        {
+                            LogConsole("No toasts found by class; performing fallback strict-scan for YouTube toasts...");
+                            // Scan windows and detect elements that satisfy all independent conditions:
+                            // AutomationId == "PriorityToastView" AND ClassName == "FlexibleToastView"
+                            // AND contains a descendant with ClassName "TextBlock" and Name contains "www.youtube.com"
+                            var all = desktop.FindAllDescendants(cf.ByControlType(ControlType.Window));
+                            var list = new List<FlaUI.Core.AutomationElements.AutomationElement>();
+                            foreach (var w in all)
+                            {
+                                try
+                                {
+                                    // do not require AutomationId; only require ClassName
+                                    var cname = w.ClassName ?? string.Empty;
+                                    if (!string.Equals(cname, "FlexibleToastView", StringComparison.OrdinalIgnoreCase))
+                                        continue;
+
+                                    // find a TextBlock descendant whose Name contains "www.youtube.com"
+                                    var textBlockCond = cf.ByClassName("TextBlock").And(cf.ByControlType(ControlType.Text));
+                                    var tb = w.FindFirstDescendant(textBlockCond);
+                                    if (tb != null && !string.IsNullOrEmpty(tb.Name) && tb.Name.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                                    {
+                                        list.Add(w);
+                                    }
+                                }
+                                catch { }
+                            }
+                            found = list.ToArray();
+                            usedFallback = true;
+                            LogConsole($"Fallback (strict) found {found.Length} candidates");
+                        }
                     }
 
                     logger.Debug($"Scan found {found.Length} candidates (usedFallback={usedFallback})");
@@ -141,6 +177,8 @@ namespace ToastCloser
                     }
 
                     // Re-iterate through found for existing processing (we will process again below)
+                    // postedHwnds: per-scan set of HWNDs we've already sent WM_CLOSE to, so we only post once
+                    var postedHwnds = new HashSet<long>();
                     foreach (var w in found)
                     {
                         string key = MakeKey(w);
@@ -277,7 +315,125 @@ namespace ToastCloser
                                 continue;
                             }
 
-                            bool closed = TryInvokeCloseButton(w, cf);
+                            bool closed = false;
+                            if (preserveHistory)
+                            {
+                                try
+                                {
+                                    var idle = GetIdleMilliseconds();
+                                    if (idle < (uint)preserveHistoryIdleMs)
+                                    {
+                                        LogConsole($"key={key} Skipping preserve-history because user active (idle={idle}ms < {preserveHistoryIdleMs}ms)");
+                                        logger.Debug($"key={key} Skipping preserve-history because user active (idle={idle}ms < {preserveHistoryIdleMs}ms)");
+                                        closed = false; // do not mark closed; retry next poll
+                                    }
+                                    else
+                                    {
+                                        if (!IsActionCenterOpen())
+                                        {
+                                            LogConsole($"key={key} Opening Action Center to preserve history for this toast...");
+                                            logger.Info($"key={key} Opening Action Center to preserve history for this toast...");
+                                            ToggleActionCenterViaWinA();
+                                            LogConsole($"key={key} Action Center toggled (preserve-history)");
+                                            logger.Info($"key={key} Action Center toggled (preserve-history)");
+                                        }
+                                        else
+                                        {
+                                            LogConsole($"key={key} Action Center already open; toggling to ensure history preserved");
+                                            logger.Info($"key={key} Action Center already open; toggling to ensure history preserved");
+                                            ToggleActionCenterViaWinA();
+                                        }
+                                        closed = true; // assume toast moved to history
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.Error($"key={key} preserve-history failed: {ex.Message}");
+                                }
+                            }
+                            else
+                            {
+                                // NEW: Try WM_CLOSE first to see if closing via WM_CLOSE preserves history.
+                                string closedBy = null;
+                                try
+                                {
+                                    // Determine host HWND: prefer element's NativeWindowHandle, else try to find host CoreWindow two levels up
+                                    IntPtr hostHwnd = IntPtr.Zero;
+                                    var native = w.Properties.NativeWindowHandle.ValueOrDefault;
+                                    if (native != 0) hostHwnd = new IntPtr(native);
+                                    else hostHwnd = FindHostWindowHandle(w);
+
+                                    if (hostHwnd != IntPtr.Zero)
+                                    {
+                                        long hval = hostHwnd.ToInt64();
+                                        if (!postedHwnds.Contains(hval))
+                                        {
+                                            NativeMethods.PostMessage(hostHwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                                            string hostClass = string.Empty;
+                                            try
+                                            {
+                                                var csb = new System.Text.StringBuilder(256);
+                                                var clenHost = NativeMethods.GetClassName(hostHwnd, csb, csb.Capacity);
+                                                if (clenHost > 0) hostClass = csb.ToString();
+                                            }
+                                            catch { }
+                                            var pm = $"key={key} Posted WM_CLOSE to hwnd 0x{hval:X} class={hostClass} (attempt before Invoke to prefer history retention)";
+                                            LogConsole(pm);
+                                            logger.Info(pm);
+                                            postedHwnds.Add(hval);
+                                            // give the window a short moment to process WM_CLOSE
+                                            Thread.Sleep(250);
+                                            try
+                                            {
+                                                var className = new System.Text.StringBuilder(256);
+                                                var clen = NativeMethods.GetClassName(hostHwnd, className, className.Capacity);
+                                                if (clen == 0)
+                                                {
+                                                    closed = true; // window gone
+                                                    closedBy = "WM_CLOSE";
+                                                }
+                                            }
+                                            catch { }
+                                        }
+                                        else
+                                        {
+                                            // already posted WM_CLOSE for this host; assume it will close children
+                                            closed = true;
+                                            closedBy = "WM_CLOSE(alreadyPosted)";
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // no host hwnd available; fall back to invoking the close button unless wmCloseOnly is set
+                                        if (!wmCloseOnly && TryInvokeCloseButton(w, cf))
+                                        {
+                                            closed = true;
+                                            closedBy = "Invoke";
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.Error($"key={key} Error during WM_CLOSE-first attempt: {ex.Message}");
+                                }
+
+                                if (!closed)
+                                {
+                                    // If WM_CLOSE did not close it (or couldn't be sent), try the UIA Invoke close button
+                                    if (!wmCloseOnly && TryInvokeCloseButton(w, cf))
+                                    {
+                                        closed = true;
+                                        closedBy = "Invoke";
+                                    }
+                                }
+
+                                if (closed && !string.IsNullOrEmpty(closedBy))
+                                {
+                                    var cbMsg = $"key={key} ClosedBy={closedBy}";
+                                    LogConsole(cbMsg);
+                                    logger.Info(cbMsg);
+                                }
+                            }
                             if (!closed && elapsed >= maxSeconds)
                             {
                                 try
@@ -285,8 +441,17 @@ namespace ToastCloser
                                     var hwnd = w.Properties.NativeWindowHandle.ValueOrDefault;
                                     if (hwnd != 0)
                                     {
-                                        NativeMethods.PostMessage(new IntPtr((long)hwnd), NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                                        var pm = $"key={key} Posted WM_CLOSE to hwnd 0x{hwnd:X}";
+                                        var target = new IntPtr((long)hwnd);
+                                        NativeMethods.PostMessage(target, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                                        string targetClass = string.Empty;
+                                        try
+                                        {
+                                            var tsb = new System.Text.StringBuilder(256);
+                                            var tclen = NativeMethods.GetClassName(target, tsb, tsb.Capacity);
+                                            if (tclen > 0) targetClass = tsb.ToString();
+                                        }
+                                        catch { }
+                                        var pm = $"key={key} Posted WM_CLOSE to hwnd 0x{hwnd:X} class={targetClass}";
                                         LogConsole(pm);
                                         logger.Info(pm);
                                         closed = true;
@@ -400,6 +565,111 @@ namespace ToastCloser
             public string ShortName { get; set; }
         }
 
+        // Action Center helper: detect if Action Center window is present and toggle it via Win+A using SendInput
+        private static bool IsActionCenterOpen()
+        {
+            var open = false;
+            NativeMethods.EnumWindows((h, l) => {
+                try
+                {
+                    if (!NativeMethods.IsWindowVisible(h)) return true;
+                    // check class name
+                    var className = new System.Text.StringBuilder(256);
+                    var clen = NativeMethods.GetClassName(h, className, className.Capacity);
+                    if (clen > 0)
+                    {
+                        var cls = className.ToString();
+                        if (string.Equals(cls, "ControlCenterWindow", StringComparison.OrdinalIgnoreCase))
+                        {
+                            open = true;
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                catch { return true; }
+            }, IntPtr.Zero);
+            return open;
+        }
+
+        private static void ToggleActionCenterViaWinA(int waitMs = 700)
+        {
+            // Determine how many toggles to send based on whether Action Center already open
+            bool alreadyOpen = IsActionCenterOpen();
+            int sends = alreadyOpen ? 3 : 2; // if already open: close->open->close; if closed: open->close
+            for (int i = 0; i < sends; i++)
+            {
+                var inputs = new NativeMethods.INPUT[4];
+                // LWIN down
+                inputs[0].type = NativeMethods.INPUT_KEYBOARD;
+                inputs[0].U.ki.wVk = (ushort)NativeMethods.VK_LWIN;
+                // 'A' down
+                inputs[1].type = NativeMethods.INPUT_KEYBOARD;
+                inputs[1].U.ki.wVk = (ushort)NativeMethods.VK_A;
+                // 'A' up
+                inputs[2].type = NativeMethods.INPUT_KEYBOARD;
+                inputs[2].U.ki.wVk = (ushort)NativeMethods.VK_A;
+                inputs[2].U.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
+                // LWIN up
+                inputs[3].type = NativeMethods.INPUT_KEYBOARD;
+                inputs[3].U.ki.wVk = (ushort)NativeMethods.VK_LWIN;
+                inputs[3].U.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
+
+                NativeMethods.SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.INPUT)));
+                Thread.Sleep(waitMs);
+            }
+        }
+
+        private static uint GetIdleMilliseconds()
+        {
+            var li = new NativeMethods.LASTINPUTINFO();
+            li.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.LASTINPUTINFO));
+            if (!NativeMethods.GetLastInputInfo(ref li)) return 0;
+            uint tick = (uint)Environment.TickCount;
+            if (tick >= li.dwTime) return tick - li.dwTime;
+            // wrap-around
+            return (uint)((uint.MaxValue - li.dwTime) + tick);
+        }
+
+        // Try to find the host HWND for a toast element by using WindowFromPoint and climbing ancestors
+        private static IntPtr FindHostWindowHandle(FlaUI.Core.AutomationElements.AutomationElement w)
+        {
+            try
+            {
+                var rect = w.BoundingRectangle;
+                var cx = (int)((rect.Left + rect.Right) / 2);
+                var cy = (int)((rect.Top + rect.Bottom) / 2);
+                var hwnd = NativeMethods.WindowFromPoint(new Point(cx, cy));
+                if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+
+                var cur = hwnd;
+                for (int i = 0; i < 8; i++)
+                {
+                    try
+                    {
+                        var className = new System.Text.StringBuilder(256);
+                        var clen = NativeMethods.GetClassName(cur, className, className.Capacity);
+                        var cls = clen > 0 ? className.ToString() : string.Empty;
+                        var titleSb = new System.Text.StringBuilder(256);
+                        NativeMethods.GetWindowText(cur, titleSb, titleSb.Capacity);
+                        var title = titleSb.ToString() ?? string.Empty;
+
+                        if (string.Equals(cls, "Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase)
+                            && title.IndexOf("新しい通知", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return cur;
+                        }
+                    }
+                    catch { }
+
+                    cur = NativeMethods.GetAncestor(cur, NativeMethods.GA_PARENT);
+                    if (cur == IntPtr.Zero) break;
+                }
+            }
+            catch { }
+            return IntPtr.Zero;
+        }
+
         class SimpleLogger : IDisposable
         {
             private readonly object _lock = new object();
@@ -450,7 +720,66 @@ namespace ToastCloser
     static class NativeMethods
     {
         public const uint WM_CLOSE = 0x0010;
+        public const int INPUT_MOUSE = 0;
+        public const int INPUT_KEYBOARD = 1;
+        public const int INPUT_HARDWARE = 2;
+        public const uint KEYEVENTF_KEYUP = 0x0002;
+        public const ushort VK_LWIN = 0x5B;
+        public const ushort VK_A = 0x41;
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct LASTINPUTINFO
+        {
+            public uint cbSize;
+            public uint dwTime;
+        }
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        public static extern int GetWindowTextLength(IntPtr hWnd);
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct INPUT
+        {
+            public int type;
+            public InputUnion U;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
+        public struct InputUnion
+        {
+            [System.Runtime.InteropServices.FieldOffset(0)] public MOUSEINPUT mi;
+            [System.Runtime.InteropServices.FieldOffset(0)] public KEYBDINPUT ki;
+            [System.Runtime.InteropServices.FieldOffset(0)] public HARDWAREINPUT hi;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct HARDWAREINPUT { public uint uMsg; public ushort wParamL; public ushort wParamH; }
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr WindowFromPoint(System.Drawing.Point p);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+        public const uint GA_PARENT = 1;
     }
 }
