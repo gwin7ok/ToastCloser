@@ -35,8 +35,9 @@
         "10",
         "30",
         "2",
-        "--skip-fallback",
-        " --detect-only"
+        "--preserve-history",
+        "--preserve-history-idle=2000",
+        "--skip-fallback"
       ],
       "presentation": {
         "reveal": "always",
