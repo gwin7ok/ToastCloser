@@ -4,3 +4,4 @@ csharp/ToastCloser/bin/
 # (必要なら obj も無視する)
 csharp/ToastCloser/obj/
 csharp/ToastCloser/obj/Debug/net7.0-windows/ref/ToastCloser.dll
+.vscode/run-in-new-window.log
