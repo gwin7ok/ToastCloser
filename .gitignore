@@ -21,4 +21,7 @@ auto_closer.log
 tools/**/bin/
 tools/**/obj/
 
+# Ignore publish outputs
+publish/
+
 

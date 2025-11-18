@@ -78,6 +78,31 @@
         "panel": "shared"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Publish: ToastCloser (Release win-x64 single-file)",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}\\csharp\\ToastCloser\\ToastCloser.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "win-x64",
+        "--self-contained",
+        "true",
+        "/p:PublishSingleFile=true",
+        "/p:PublishTrimmed=false",
+        "-o",
+        "${workspaceFolder}\\publish\\ToastCloser\\win-x64"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
     }
   ]
 }
