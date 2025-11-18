@@ -11,24 +11,38 @@ class Program
 {
     // Note: window detection uses UIA (FlaUI) via desktop.FindFirstChild(cond)
 
-    // SendInput for key simulation
+    // SendInput for key simulation (standard struct layout)
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
 
     private const ushort VK_LWIN = 0x5B;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const int INPUT_KEYBOARD = 1;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
     {
-        public uint type;
+        public int type;
         public InputUnion U;
     }
 
     [StructLayout(LayoutKind.Explicit)]
     private struct InputUnion
     {
+        [FieldOffset(0)] public MOUSEINPUT mi;
         [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -38,7 +52,15 @@ class Program
         public ushort wScan;
         public uint dwFlags;
         public uint time;
-        public IntPtr dwExtraInfo;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
     }
 
         static int Main(string[] args)
@@ -54,7 +76,8 @@ class Program
 
         int mode = 1;
         bool visibleOnly = false;
-            int intervalSeconds = 2;
+            int intervalSeconds = 5;
+        int keyDelayMs = 150;
         foreach (var a in args)
         {
             if (a.StartsWith("--mode="))
@@ -69,6 +92,12 @@ class Program
                     if (!int.TryParse(v, out intervalSeconds)) intervalSeconds = 2;
                     if (intervalSeconds <= 0) intervalSeconds = 2;
                 }
+                if (a.StartsWith("--key-delay="))
+                {
+                    var v = a.Substring("--key-delay=".Length);
+                    if (!int.TryParse(v, out keyDelayMs)) keyDelayMs = 150;
+                    if (keyDelayMs < 0) keyDelayMs = 150;
+                }
         }
 
         // Define combos
@@ -78,18 +107,18 @@ class Program
         if (mode == 1)
         {
             Console.WriteLine("Mode 1: shortcut=Win+A  target Class=ControlCenterWindow Name=クイック設定");
-                RunModeLoop("ControlCenterWindow", "クイック設定", 'A', visibleOnly, intervalSeconds);
+                RunModeLoop("ControlCenterWindow", "クイック設定", 'A', visibleOnly, intervalSeconds, keyDelayMs);
         }
         else
         {
             Console.WriteLine("Mode 2: shortcut=Win+N  target Class=Windows.UI.Core.CoreWindow Name=通知センター");
-                RunModeLoop("Windows.UI.Core.CoreWindow", "通知センター", 'N', visibleOnly, intervalSeconds);
+                RunModeLoop("Windows.UI.Core.CoreWindow", "通知センター", 'N', visibleOnly, intervalSeconds, keyDelayMs);
         }
 
         return 0;
     }
 
-    private static void RunModeLoop(string className, string name, char keyChar, bool visibleOnly, int intervalSeconds)
+    private static void RunModeLoop(string className, string name, char keyChar, bool visibleOnly, int intervalSeconds, int keyDelayMs)
     {
         Console.WriteLine($"Starting loop: check every {intervalSeconds} seconds. Press Ctrl+C to stop.");
         while (true)
@@ -100,6 +129,17 @@ class Program
             var exists = res.found;
             var info = res.info;
             Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss}] Found={exists} info='{info}'");
+            try
+            {
+                int times = exists ? 3 : 2;
+                Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss}] Sending shortcut Win+{keyChar} {times} times (delay={keyDelayMs}ms)");
+                SendWinPlusChar(keyChar, times, keyDelayMs);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error sending shortcut: {ex.Message}");
+            }
+
             Thread.Sleep(intervalSeconds * 1000);
         }
     }

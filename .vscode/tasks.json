@@ -37,7 +37,6 @@
         "2",
         "--preserve-history",
         "--preserve-history-idle=2000",
-        "--detect-only",
         "--skip-fallback"
       ],
       "presentation": {
