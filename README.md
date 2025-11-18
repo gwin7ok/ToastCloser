@@ -23,13 +23,13 @@ pip install -r requirements.txt
 実行方法:
 
 ```powershell
-python src\main.py --min-seconds 10 --max-seconds 30 --poll 1.0
+python src\main.py --display-limit-seconds 10 --poll-interval-seconds 1.0
 ```
 
 バックグラウンド起動（PowerShell 例）:
 
 ```powershell
-Start-Process -FilePath python -ArgumentList 'src\main.py --min-seconds 10 --max-seconds 30' -WindowStyle Hidden
+Start-Process -FilePath python -ArgumentList 'src\main.py --display-limit-seconds 10 --poll-interval-seconds 1.0' -WindowStyle Hidden
 ```
 
 ログは標準出力に出ます。問題があればログを貼ってください。

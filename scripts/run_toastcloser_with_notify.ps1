@@ -3,7 +3,7 @@ param(
 )
 $proj = 'g:\Cursor_Folder\noticeWindowFinder\csharp\ToastCloser\ToastCloser.csproj'
 Write-Output "Starting ToastCloser for $RunSeconds seconds..."
-$p = Start-Process -FilePath 'dotnet' -ArgumentList @('run','--project',$proj,'--','--preserve-history','--preserve-history-idle=2000','--detection-timeout-ms=1000','--win-a-delay-ms=300') -PassThru
+    $p = Start-Process -FilePath 'dotnet' -ArgumentList @('run','--project',$proj,'--','--preserve-history','--preserve-history-idle-ms=2000','--detection-timeout-ms=1000','--win-a-delay-ms=300') -PassThru
 # wait a moment for the app to initialize
 Start-Sleep -Seconds 2
 

@@ -26,17 +26,16 @@
       "label": "Run: Workspace Runner",
       "type": "shell",
       "command": "pwsh",
-      "args": [
+        "args": [
         "-NoProfile",
         "-File",
         "${workspaceFolder}\\.vscode\\run-in-new-window.ps1",
         "${workspaceFolder}",
         "true",
-        "10",
-        "30",
-        "2",
+        "--display-limit-seconds=10",
+        "--poll-interval-seconds=2",
         "--preserve-history",
-        "--preserve-history-idle=2000",
+        "--preserve-history-idle-ms=2000",
         "--detection-timeout-ms=1000",
         "--win-a-delay-ms=200",
         "--skip-fallback"

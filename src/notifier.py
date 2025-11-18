@@ -5,11 +5,10 @@ from pywinauto import Desktop
 
 class ToastWatcher:
     def __init__(self, class_name='FlexibleToastView', automation_id='PriorityToastView',
-                 min_seconds=10, max_seconds=30, poll_interval=1.0, debug=False):
+                 min_seconds=10, poll_interval=1.0, debug=False):
         self.class_name = class_name
         self.automation_id = automation_id
         self.min_seconds = min_seconds
-        self.max_seconds = max_seconds
         self.poll = poll_interval
         self.desktop = Desktop(backend='uia')
         self.debug = debug
@@ -159,18 +158,7 @@ class ToastWatcher:
             if elapsed >= self.min_seconds:
                 logging.info('Toast %s exceeded min_seconds (%.1f), attempting close', key, elapsed)
                 closed = self._close_via_button(w)
-                if not closed and elapsed >= self.max_seconds:
-                    # As fallback, try to close via hwnd if available
-                    try:
-                        hwnd = w.handle
-                        if hwnd:
-                            import ctypes
-                            WM_CLOSE = 0x0010
-                            ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
-                            logging.info('Posted WM_CLOSE to hwnd %s', hwnd)
-                            closed = True
-                    except Exception as e:
-                        logging.debug('Failed to post WM_CLOSE: %s', e)
+                # Hard WM_CLOSE fallback removed: rely on Invoke/click and future scans
 
                 if closed:
                     # remove from tracked; it will disappear on next scan

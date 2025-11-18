@@ -23,7 +23,6 @@ namespace ToastCloser
         static void Main(string[] args)
         {
             double minSeconds = 10.0;
-            double maxSeconds = 30.0;
             double poll = 1.0;
             bool detectOnly = false;
             bool preserveHistory = false;
@@ -56,18 +55,33 @@ namespace ToastCloser
                 skipFallback = true;
                 argList = argList.Where(a => a != "--skip-fallback").ToList();
             }
-            // allow optional idle-ms override: --preserve-history-idle=ms
-            var idleArg = argList.FirstOrDefault(a => a.StartsWith("--preserve-history-idle="));
+            // allow optional idle-ms override: --preserve-history-idle-ms=ms
+            var idleArg = argList.FirstOrDefault(a => a.StartsWith("--preserve-history-idle-ms="));
             if (!string.IsNullOrEmpty(idleArg))
             {
                 var part = idleArg.Split('=');
                 if (part.Length == 2 && int.TryParse(part[1], out var v)) preserveHistoryIdleMs = Math.Max(0, v);
-                argList = argList.Where(a => !a.StartsWith("--preserve-history-idle=")).ToList();
+                argList = argList.Where(a => !a.StartsWith("--preserve-history-idle-ms=")).ToList();
             }
 
-            if (argList.Count >= 1) double.TryParse(argList[0], out minSeconds);
-            if (argList.Count >= 2) double.TryParse(argList[1], out maxSeconds);
-            if (argList.Count >= 3) double.TryParse(argList[2], out poll);
+            // Prefer named options: --display-limit-seconds=, --poll-interval-seconds=
+            var minArg = argList.FirstOrDefault(a => a.StartsWith("--display-limit-seconds="));
+            if (!string.IsNullOrEmpty(minArg))
+            {
+                var part = minArg.Split('=');
+                if (part.Length == 2 && double.TryParse(part[1], out var v)) minSeconds = Math.Max(0.0, v);
+                argList = argList.Where(a => !a.StartsWith("--display-limit-seconds=")).ToList();
+            }
+            var pollArg = argList.FirstOrDefault(a => a.StartsWith("--poll-interval-seconds="));
+            if (!string.IsNullOrEmpty(pollArg))
+            {
+                var part = pollArg.Split('=');
+                if (part.Length == 2 && double.TryParse(part[1], out var v)) poll = Math.Max(0.1, v);
+                argList = argList.Where(a => !a.StartsWith("--poll-interval-seconds=")).ToList();
+            }
+
+            // Positional arguments have been removed. Use named options:
+            // --display-limit-seconds=, --poll-interval-seconds=
 
             // allow optional detection timeout override: --detection-timeout-ms=ms
             var detArg = argList.FirstOrDefault(a => a.StartsWith("--detection-timeout-ms="));
@@ -88,7 +102,7 @@ namespace ToastCloser
                 argList = argList.Where(a => !a.StartsWith("--win-a-delay-ms=")).ToList();
             }
 
-            LogConsole($"ToastCloser starting (min={minSeconds} max={maxSeconds} poll={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} wmCloseOnly={wmCloseOnly} skipFallback={skipFallback} detectionTimeoutMs={detectionTimeoutMs} winADelayMs={winADelayMs})");
+            LogConsole($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} wmCloseOnly={wmCloseOnly} skipFallback={skipFallback} detectionTimeoutMs={detectionTimeoutMs} winADelayMs={winADelayMs})");
 
             var tracked = new Dictionary<string, TrackedInfo>();
             var groups = new Dictionary<int, DateTime>();
@@ -689,36 +703,10 @@ namespace ToastCloser
                                     logger.Info(cbMsg);
                                 }
                             }
-                            if (!closed && elapsed >= maxSeconds)
-                            {
-                                try
-                                {
-                                    var hwnd = w.Properties.NativeWindowHandle.ValueOrDefault;
-                                    if (hwnd != 0)
-                                    {
-                                        var target = new IntPtr((long)hwnd);
-                                        NativeMethods.PostMessage(target, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                                        string targetClass = string.Empty;
-                                        try
-                                        {
-                                            var tsb = new System.Text.StringBuilder(256);
-                                            var tclen = NativeMethods.GetClassName(target, tsb, tsb.Capacity);
-                                            if (tclen > 0) targetClass = tsb.ToString();
-                                        }
-                                        catch { }
-                                        var pm = $"key={key} Posted WM_CLOSE to hwnd 0x{hwnd:X} class={targetClass}";
-                                        LogConsole(pm);
-                                        logger.Info(pm);
-                                        closed = true;
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    var em = $"Failed to post WM_CLOSE: {ex.Message}";
-                                    LogConsole(em);
-                                    logger.Error(em);
-                                }
-                            }
+                            // NOTE: hard timeout behavior (posting WM_CLOSE) was removed
+                            // was removed to avoid forced closes that may leave Quick Settings open
+                            // or otherwise disrupt the desktop state. If needed, implement a
+                            // conservative verification loop after ToggleActionCenterViaWinA instead.
 
                             if (closed)
                             {

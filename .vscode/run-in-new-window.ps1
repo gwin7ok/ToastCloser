@@ -19,7 +19,16 @@ switch -Regex ($keepOpen.ToString().ToLower()) {
 
 # Determine application arguments (default: 10 30 1)
 if ($null -eq $appArgs -or $appArgs.Length -eq 0) {
-  $appArgs = @('10','30','5')
+  # default named options
+  $appArgs = @('--display-limit-seconds=10','--poll-interval-seconds=5')
+}
+
+# Enforce named options only: reject any positional (non --) args
+foreach ($a in $appArgs) {
+  if (-not ($a -like '--*')) {
+    Write-Error "Positional arguments are no longer supported. Use named options like --display-limit-seconds= and --poll-interval-seconds=. Received: $a"
+    exit 2
+  }
 }
 
 # Build the command to run inside the new PowerShell window

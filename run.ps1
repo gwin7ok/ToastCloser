@@ -1,6 +1,6 @@
 param(
-    [int]$minSeconds = 10,
-    [int]$maxSeconds = 30
+    [int]$displayLimitSeconds = 10,
+    [int]$pollIntervalSeconds = 1
 )
 
 # Activate venv if present
@@ -9,4 +9,4 @@ if (Test-Path .venv) {
 }
 
 # Run in background
-Start-Process -FilePath python -ArgumentList "src\main.py --min-seconds $minSeconds --max-seconds $maxSeconds" -WindowStyle Hidden
+Start-Process -FilePath python -ArgumentList "src\main.py --display-limit-seconds $displayLimitSeconds --poll-interval-seconds $pollIntervalSeconds" -WindowStyle Hidden

@@ -18,8 +18,9 @@ msbuild csharp\ToastCloser\ToastCloser.csproj /p:Configuration=Debug
 
 実行方法:
 ```powershell
-# ビルド後に出力フォルダから実行（引数は順に: <minSeconds> <maxSeconds> <pollSeconds>）
-.\csharp\ToastCloser\bin\Debug\ToastCloser.exe 10 30 1
+# ビルド後に出力フォルダから実行（名前付きオプションを使います）
+# 例: 最小待ち 10 秒、ポーリング間隔 1 秒
+.\csharp\ToastCloser\bin\Debug\ToastCloser.exe --display-limit-seconds=10 --poll-interval-seconds=1
 ```
 
 VS Code タスク一覧に関して:
@@ -39,10 +40,9 @@ System.Windows.Automation を使って Chrome のトースト通知（FlexibleTo
 
 実行方法:
 ```powershell
-# 引数は順に: <minSeconds> <maxSeconds> <pollSeconds>
-.
-ToastCloser.exe 10 30 1
-```
+# 起動は名前付きオプションを使用します。
+# 例: .\ToastCloser.exe --display-limit-seconds=10 --poll-interval-seconds=1
+``` 
 
 注意:
 - このサンプルは .NET Framework をターゲットにしているため、`dotnet run` でのビルドはできない場合があります。Visual Studio を使うか、msbuild を利用してください。
