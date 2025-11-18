@@ -35,7 +35,7 @@
         "--display-limit-seconds=10",
         "--poll-interval-seconds=2",
         "--preserve-history",
-        "--preserve-history-mode=quicksetting",
+        "--preserve-history-mode=noticecenter",
         "--preserve-history-idle-ms=2000",
         "--detection-timeout-ms=1000",
         "--win-shortcutkey-delay-ms=200",
@@ -56,6 +56,22 @@
         "-NoProfile",
         "-File",
         "${workspaceFolder}\\scripts\\send_burnttoast_attribution.ps1"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+    ,
+    {
+      "label": "Send: delayed BurntToast attribution test (5s)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "Start-Sleep -Seconds 5; ${workspaceFolder}\\scripts\\send_burnttoast_attribution.ps1"
       ],
       "presentation": {
         "reveal": "always",

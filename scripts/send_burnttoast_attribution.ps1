@@ -1,7 +1,7 @@
 param(
     [string]$Title = 'Google Chrome',
     [string]$Line1 = '🔴 ライブ配信が開始されました',
-    [string]$Line2 = 'www.youtube.com - ExampleChannel',
+    [string]$Line2 = 'VSCodeによるデスクトップ通知テスト',
     [string]$Attribution = 'www.youtube.com'
 )
 
