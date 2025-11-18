@@ -47,5 +47,21 @@
       },
       "problemMatcher": []
     }
+    ,
+    {
+      "label": "Send: BurntToast attribution test",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}\\scripts\\send_burnttoast_attribution.ps1"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
   ]
 }
