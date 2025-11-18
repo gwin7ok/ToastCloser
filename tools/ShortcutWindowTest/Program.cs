@@ -9,20 +9,7 @@ using FlaUI.UIA3;
 
 class Program
 {
-    // Native interop
-    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-    [DllImport("user32.dll")]
-    private static extern bool IsWindowVisible(IntPtr hWnd);
+    // Note: window detection uses UIA (FlaUI) via desktop.FindFirstChild(cond)
 
     // SendInput for key simulation
     [DllImport("user32.dll", SetLastError = true)]
@@ -144,33 +131,7 @@ class Program
         }
     }
 
-    private static (bool found, string info) FindTopLevelWindowByClassAndName(string className, string targetName, bool requireVisible)
-    {
-        string foundInfo = string.Empty;
-        bool found = false;
-        EnumWindows((hWnd, lParam) => {
-            try
-            {
-                if (requireVisible && !IsWindowVisible(hWnd)) return true;
-                var clsSb = new StringBuilder(256);
-                GetClassName(hWnd, clsSb, clsSb.Capacity);
-                var cls = clsSb.ToString();
-                if (!string.Equals(cls, className, StringComparison.OrdinalIgnoreCase)) return true;
-                var txtSb = new StringBuilder(512);
-                GetWindowText(hWnd, txtSb, txtSb.Capacity);
-                var txt = txtSb.ToString();
-                if (string.Equals(txt, targetName, StringComparison.Ordinal))
-                {
-                    foundInfo = $"hwnd=0x{hWnd.ToInt64():X} class='{cls}' text='{txt}'";
-                    found = true;
-                    return false; // stop
-                }
-            }
-            catch { }
-            return true;
-        }, IntPtr.Zero);
-        return (found, foundInfo);
-    }
+    // native top-level enumeration removed; detection uses UIA only
 
     private static void SendWinPlusChar(char c, int times, int delayMs)
     {
