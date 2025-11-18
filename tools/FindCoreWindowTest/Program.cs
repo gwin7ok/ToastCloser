@@ -9,6 +9,7 @@ using FlaUI.Core;
 using FlaUI.Core.Conditions;
 using FlaUI.UIA3;
 using FlaUI.Core.AutomationElements;
+#nullable disable
 // UIA via COM will be used (dynamic); do not rely on System.Windows.Automation assembly reference
 
 class Program
@@ -75,9 +76,9 @@ class Program
         int foundCount = 0;
 
         // Prepare for UIA with the ability to reinitialize on timeout.
-        UIA3Automation? automation = null;
-        ConditionFactory? cf = null;
-        FlaUI.Core.AutomationElements.AutomationElement? desktop = null;
+        UIA3Automation automation = null;
+        ConditionFactory cf = null;
+        FlaUI.Core.AutomationElements.AutomationElement desktop = null;
 
         void EnsureAutomation()
         {
@@ -111,8 +112,8 @@ class Program
                 Console.WriteLine($"  Condition built in {condSw.ElapsedMilliseconds}ms");
 
                 // Attempt Find with timeout and optional reinit+retry
-                FlaUI.Core.AutomationElements.AutomationElement? el = null;
-                Exception? findEx = null;
+                FlaUI.Core.AutomationElements.AutomationElement el = null;
+                Exception findEx = null;
                 long findCallMs = 0;
                 int attempt = 0;
                 bool foundAttempt = false;
@@ -207,6 +208,8 @@ class Program
         // End: do not run other detection methods.
         return;
 
+    #if false
+
         // Fast top-level GetWindowText-based detection (checks only desktop direct children)
         // Per user request, ignore visibility and check all top-level windows.
         var topLevel = FindTopLevelWindowByText(targetName, "Windows.UI.Core.CoreWindow", requireVisible: false);
@@ -225,7 +228,7 @@ class Program
         Console.WriteLine($"Top-level polling result: found={polled} totalElapsed={swPoll.ElapsedMilliseconds} ms");
         if (polled) return;
 
-        var methods = new List<(string name, Func<IntPtr, string?> matcher)>
+        var methods = new List<(string name, Func<IntPtr, string> matcher)>
         {
             ("ClassNameExact", hWnd => {
                 var sb = new StringBuilder(256);
@@ -337,6 +340,7 @@ class Program
         Console.WriteLine($"\nOverall search end: {DateTime.Now:O} totalElapsed={overallSw.ElapsedMilliseconds} ms");
         // Also check the specific native handle if it exists in this session
         CheckSpecificNativeHandle(0x109A6, targetName);
+    #endif
     }
 
     private static void CheckSpecificNativeHandle(int nativeHandle, string targetName)
@@ -475,7 +479,7 @@ class Program
         {
             // CLSID of CUIAutomation
             var clsid = new Guid("FF48DBA4-60EF-4201-AA87-54103EEF594E");
-            Type? uiaType = Type.GetTypeFromProgID("CUIAutomation");
+            var uiaType = Type.GetTypeFromProgID("CUIAutomation");
             if (uiaType == null) uiaType = Type.GetTypeFromProgID("UIAutomationClient.CUIAutomation");
             if (uiaType == null) uiaType = Type.GetTypeFromCLSID(clsid);
             dynamic uia = Activator.CreateInstance(uiaType);
@@ -537,7 +541,7 @@ class Program
     private static (bool found, string info, long elapsed) FindTopLevelWindowByText(string targetName, string className = null, bool requireVisible = true)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        string? foundInfo = null;
+        string foundInfo = null;
         EnumWindows((hWnd, lParam) => {
             try
             {
@@ -564,7 +568,7 @@ class Program
         return (foundInfo != null, foundInfo ?? string.Empty, sw.ElapsedMilliseconds);
     }
 
-    private static string? GetAccessibleNameMatch(IntPtr hWnd, uint objId, string target)
+    private static string GetAccessibleNameMatch(IntPtr hWnd, uint objId, string target)
     {
         try
         {
@@ -579,7 +583,7 @@ class Program
                     // Try the object itself first (varChild = 0)
                     try
                     {
-                        string? name0 = null;
+                        string name0 = null;
                         try { name0 = acc.get_accName(0); } catch { }
                         if (!string.IsNullOrEmpty(name0) && string.Equals(name0, target, StringComparison.Ordinal))
                             return $"hwnd=0x{hWnd.ToInt64():X} accName='{name0}' objId=0x{objId:X} varChild=0";
@@ -591,7 +595,7 @@ class Program
                     {
                         try
                         {
-                            string? childName = null;
+                            string childName = null;
                             try { childName = acc.get_accName(childId); } catch { }
                             if (!string.IsNullOrEmpty(childName) && string.Equals(childName, target, StringComparison.Ordinal))
                                 return $"hwnd=0x{hWnd.ToInt64():X} accName='{childName}' objId=0x{objId:X} varChild={childId}";
@@ -606,7 +610,7 @@ class Program
         return null;
     }
 
-    private static string? GetChildAccessibleMatch(IntPtr hWnd, string target)
+    private static string GetChildAccessibleMatch(IntPtr hWnd, string target)
     {
         var found = new List<string>();
         try
@@ -628,7 +632,7 @@ class Program
         return null;
     }
 
-    private static string? GetAccessibleNameMatchContains(IntPtr hWnd, uint objId, string target)
+    private static string GetAccessibleNameMatchContains(IntPtr hWnd, uint objId, string target)
     {
         try
         {
@@ -642,7 +646,7 @@ class Program
                     var acc = (IAccessible)Marshal.GetObjectForIUnknown(pAcc);
                     try
                     {
-                        string? name0 = null;
+                        string name0 = null;
                         try { name0 = acc.get_accName(0); } catch { }
                         if (!string.IsNullOrEmpty(name0) && name0.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0)
                             return $"hwnd=0x{hWnd.ToInt64():X} accName='{name0}' objId=0x{objId:X} varChild=0";
@@ -653,7 +657,7 @@ class Program
                     {
                         try
                         {
-                            string? childName = null;
+                            string childName = null;
                             try { childName = acc.get_accName(childId); } catch { }
                             if (!string.IsNullOrEmpty(childName) && childName.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0)
                                 return $"hwnd=0x{hWnd.ToInt64():X} accName='{childName}' objId=0x{objId:X} varChild={childId}";
