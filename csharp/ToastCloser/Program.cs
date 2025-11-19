@@ -26,6 +26,23 @@ namespace ToastCloser
 
         static void Main(string[] args)
         {
+            // single-instance check: prevent multiple processes
+            try
+            {
+                bool createdNew = false;
+                var mutexName = "Global\\noticeWindowFinder_ToastCloser_mutex";
+                var single = new System.Threading.Mutex(true, mutexName, out createdNew);
+                if (!createdNew)
+                {
+                    try
+                    {
+                        NativeMethods.MessageBoxW(IntPtr.Zero, "ToastCloser is already running.", "ToastCloser", 0x00000040);
+                    }
+                    catch { }
+                    return;
+                }
+            }
+            catch { }
             double minSeconds = 10.0;
             double poll = 1.0;
             bool detectOnly = false;
@@ -127,20 +144,42 @@ namespace ToastCloser
                 argList = argList.Where(a => !a.StartsWith("--preserve-history-mode=")).ToList();
             }
 
-            LogConsole($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} preserveHistoryMode={preserveHistoryMode} wmCloseOnly={wmCloseOnly} skipFallback={skipFallback} detectionTimeoutMs={detectionTimeoutMs} winADelayMs={winADelayMs})");
+            Logger.Instance?.Info($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} preserveHistoryMode={preserveHistoryMode} wmCloseOnly={wmCloseOnly} skipFallback={skipFallback} detectionTimeoutMs={detectionTimeoutMs} winADelayMs={winADelayMs})");
 
             var tracked = new Dictionary<string, TrackedInfo>();
             var groups = new Dictionary<int, DateTime>();
             int nextGroupId = 1;
 
-            // setup log file in same folder as executable
+            // setup log folder under executable and log file path
             var exeFolder = AppContext.BaseDirectory;
-            var logPath = System.IO.Path.Combine(exeFolder, "auto_closer.log");
-            var logger = new SimpleLogger(logPath);
+            var logsDir = System.IO.Path.Combine(exeFolder, "logs");
+            try { System.IO.Directory.CreateDirectory(logsDir); } catch { }
+            var logPath = System.IO.Path.Combine(logsDir, "auto_closer.log");
+            // startup log rotation: if a prior log exists, rename it using its creation timestamp
+            try
+            {
+                if (System.IO.File.Exists(logPath))
+                {
+                    var ctime = System.IO.File.GetCreationTime(logPath); // use file creation time (local)
+                    var ts = ctime.ToString("yyyy-MM-dd-HH-mm-ss");
+                    var dir = System.IO.Path.GetDirectoryName(logPath) ?? string.Empty;
+                    var baseName = System.IO.Path.GetFileNameWithoutExtension(logPath);
+                    var ext = System.IO.Path.GetExtension(logPath);
+                    var destName = baseName + "." + ts + ext; // baseName.YYYY-MM-DD-HH-MM-SS.ext
+                    var dest = System.IO.Path.Combine(dir, destName);
+                    try
+                    {
+                        System.IO.File.Move(logPath, dest);
+                    }
+                    catch { /* safe to ignore rotation failures */ }
+                }
+            }
+            catch { }
+            var logger = new Logger(logPath);
             // expose logger for static helpers to use when writing diagnostic entries
-            SimpleLogger.Instance = logger;
-            // If verbose flag set, echo DEBUG-level entries to console as well
-            SimpleLogger.EchoDebugToConsole = _verboseLog;
+            Logger.Instance = logger;
+            // control debug-level emission: --verbose-log sets IsDebugEnabled
+            Logger.IsDebugEnabled = _verboseLog;
 
             // UIA automation instances are reinitializable on timeout. Keep them in mutable variables
             UIA3Automation? automation = new UIA3Automation();
@@ -193,8 +232,7 @@ namespace ToastCloser
                                 if (oldestElapsedMs >= monitorThresholdMs)
                                 {
                                     _monitoringStarted = true;
-                                    LogConsole($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs})");
-                                    SimpleLogger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs})");
+                                    Logger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs})");
 
                                     // Immediate one-shot poll to capture very recent input
                                     try
@@ -203,7 +241,7 @@ namespace ToastCloser
                                         {
                                             _lastCursorPos = ipos;
                                             _lastMouseTick = (uint)Environment.TickCount;
-                                            if (_verboseLog) SimpleLogger.Instance?.Debug($"ImmediatePoll: Mouse at {ipos.X},{ipos.Y}");
+                                            if (_verboseLog) Logger.Instance?.Debug($"ImmediatePoll: Mouse at {ipos.X},{ipos.Y}");
                                         }
                                     }
                                     catch { }
@@ -220,7 +258,7 @@ namespace ToastCloser
                                                 if (transition && (IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                 {
                                                     _lastKeyboardTick = (uint)Environment.TickCount;
-                                                    if (_verboseLog) SimpleLogger.Instance?.Debug($"ImmediatePoll: Detected vk={vk}");
+                                                    if (_verboseLog) Logger.Instance?.Debug($"ImmediatePoll: Detected vk={vk}");
                                                     break;
                                                 }
                                             }
@@ -242,7 +280,7 @@ namespace ToastCloser
                                                 {
                                                     _lastCursorPos = cur;
                                                     _lastMouseTick = (uint)Environment.TickCount;
-                                                    if (_verboseLog) SimpleLogger.Instance?.Debug($"Detected mouse movement during monitoring: {cur.X},{cur.Y}");
+                                                    if (_verboseLog) Logger.Instance?.Debug($"Detected mouse movement during monitoring: {cur.X},{cur.Y}");
                                                 }
                                             }
                                         }
@@ -259,7 +297,7 @@ namespace ToastCloser
                                                     if (transition && (IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                     {
                                                         _lastKeyboardTick = (uint)Environment.TickCount;
-                                                        if (_verboseLog) SimpleLogger.Instance?.Debug($"Detected keyboard activity during monitoring (vk={vk})");
+                                                        if (_verboseLog) Logger.Instance?.Debug($"Detected keyboard activity during monitoring (vk={vk})");
                                                         break;
                                                     }
                                                 }
@@ -277,14 +315,12 @@ namespace ToastCloser
                                                 if (string.Equals(preserveHistoryMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                 {
                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winADelayMs);
-                                                    LogConsole("Notification Center toggled (preserve-history)");
-                                                    SimpleLogger.Instance?.Info("Notification Center toggled (preserve-history)");
+                                                    Logger.Instance?.Info("Notification Center toggled (preserve-history)");
                                                 }
                                                 else
                                                 {
                                                     ToggleShortcutWithDetection('A', IsActionCenterOpen, winADelayMs);
-                                                    LogConsole("Action Center toggled (preserve-history)");
-                                                    SimpleLogger.Instance?.Info("Action Center toggled (preserve-history)");
+                                                    Logger.Instance?.Info("Action Center toggled (preserve-history)");
                                                 }
 
                                                 // Mark all tracked as handled
@@ -321,7 +357,7 @@ namespace ToastCloser
 
                     // Log search start time for diagnostics
                     var searchStart = DateTime.UtcNow;
-                    LogConsole("Toast search: start");
+                    Logger.Instance?.Info("Toast search: start");
 
                     // Primary search: prefer CoreWindow -> ScrollViewer -> FlexibleToastView chain
                     // and only select toasts whose Attribution TextBlock contains 'youtube' (or 'www.youtube.com').
@@ -341,7 +377,7 @@ namespace ToastCloser
                             var localDesktop = desktop;
                             if (localCf == null || localDesktop == null)
                             {
-                                LogConsole("UIA not initialized for search; skipping local search");
+                                Logger.Instance?.Info("UIA not initialized for search; skipping local search");
                                 return (localFound, localUsedFallback);
                             }
                             // try CoreWindow by name '新しい通知' first
@@ -350,31 +386,31 @@ namespace ToastCloser
                             AutomationElement? coreElement = null;
                             try
                             {
-                                LogConsole($"Calling desktop.FindFirstChild(CoreWindow by name) (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                Logger.Instance?.Debug($"Calling desktop.FindFirstChild(CoreWindow by name) (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                 coreElement = localDesktop.FindFirstChild(coreByNameCond);
                             }
                             catch (Exception ex)
                             {
-                                LogConsole("Exception during UIA CoreWindow search: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                Logger.Instance?.Error("Exception during UIA CoreWindow search: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                             }
-                                LogConsole($"CoreWindow found={(coreElement != null)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                Logger.Instance?.Debug($"CoreWindow found={(coreElement != null)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
 
                             if (coreElement == null)
                             {
                                 // Named CoreWindow not present: end search here
-                                LogConsole($"CoreWindow(Name='新しい通知') not found; ending CoreWindow-based search. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                Logger.Instance?.Debug($"CoreWindow(Name='新しい通知') not found; ending CoreWindow-based search. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                             }
                             else
                             {
-                                LogConsole($"Finding ScrollViewer under CoreWindow (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                Logger.Instance?.Debug($"Finding ScrollViewer under CoreWindow (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                 var scroll = coreElement.FindFirstDescendant(localCf.ByClassName("ScrollViewer"));
-                                LogConsole($"ScrollViewer found={(scroll != null)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                Logger.Instance?.Debug($"ScrollViewer found={(scroll != null)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
 
                                 if (scroll != null)
                                 {
-                                    LogConsole($"Enumerating FlexibleToastView under ScrollViewer (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                    Logger.Instance?.Debug($"Enumerating FlexibleToastView under ScrollViewer (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                     var toasts = scroll.FindAllDescendants(cf.ByClassName("FlexibleToastView"));
-                                    LogConsole($"FlexibleToastView count={(toasts?.Length ?? 0)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                    Logger.Instance?.Debug($"FlexibleToastView count={(toasts?.Length ?? 0)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
 
                                     if (toasts != null && toasts.Length > 0)
                                     {
@@ -382,24 +418,24 @@ namespace ToastCloser
                                         {
                                             try
                                             {
-                                                            LogConsole($"Inspecting FlexibleToastView candidate (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                                            Logger.Instance?.Debug($"Inspecting FlexibleToastView candidate (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                                             var tbAttrCond = localCf.ByClassName("TextBlock").And(localCf.ByAutomationId("Attribution")).And(localCf.ByControlType(ControlType.Text));
                                                             var tbAttr = t.FindFirstDescendant(tbAttrCond);
-                                                LogConsole($"Attribution found={(tbAttr != null)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                                Logger.Instance?.Debug($"Attribution found={(tbAttr != null)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                                 if (tbAttr != null)
                                                 {
                                                     var attr = SafeGetName(tbAttr);
-                                                    LogConsole($"Attribution.Name=\"{attr}\" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                                    Logger.Instance?.Debug($"Attribution.Name=\"{attr}\" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                                     if (!string.IsNullOrEmpty(attr) && attr.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0)
                                                     {
                                                         localFound.Add(t);
-                                                        LogConsole($"Added FlexibleToastView candidate (Attribution contains 'www.youtube.com') (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                                        Logger.Instance?.Debug($"Added FlexibleToastView candidate (Attribution contains 'www.youtube.com') (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                                     }
                                                 }
                                             }
                                             catch (Exception ex)
                                             {
-                                                LogConsole("Error while inspecting toast: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                                                Logger.Instance?.Error("Error while inspecting toast: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                             }
                                         }
                                     }
@@ -408,7 +444,7 @@ namespace ToastCloser
                         }
                         catch (Exception ex)
                         {
-                            LogConsole("Exception during CoreWindow path: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                            Logger.Instance?.Error("Exception during CoreWindow path: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                         }
                         return (localFound, localUsedFallback);
                     });
@@ -422,8 +458,8 @@ namespace ToastCloser
                     }
                     else
                     {
-                        LogConsole($"CoreWindow search timed out after {detectionTimeoutMs}ms; skipping this scan to avoid long blocking. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
-                        logger.Debug($"CoreWindow search timed out after {detectionTimeoutMs}ms and was cancelled for this poll (durationMs={detectionTimeoutMs})");
+                        Logger.Instance?.Warn($"CoreWindow search timed out after {detectionTimeoutMs}ms; skipping this scan to avoid long blocking. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
+                        Logger.Instance?.Debug($"CoreWindow search timed out after {detectionTimeoutMs}ms and was cancelled for this poll (durationMs={detectionTimeoutMs})");
                         foundList = new List<FlaUI.Core.AutomationElements.AutomationElement>();
                         usedFallback = false;
 
@@ -1091,10 +1127,8 @@ namespace ToastCloser
         // Console output helper that prefixes the human-friendly timestamp
         private static void LogConsole(string m)
         {
-            var line = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} {m}";
-            Console.WriteLine(line);
-            // Also write the same message to the shared SimpleLogger at DEBUG level
-            try { SimpleLogger.Instance?.Debug(m); } catch { }
+            // Delegate LogConsole to Logger.Info to unify output
+            try { Logger.Instance?.Info(m); } catch { }
         }
 
         class TrackedInfo
@@ -1273,14 +1307,14 @@ namespace ToastCloser
             return found;
         }
 
-        class SimpleLogger : IDisposable
+        class Logger : IDisposable
         {
-            public static SimpleLogger? Instance { get; set; }
-            // When true, DEBUG messages will also be written to Console
-            public static bool EchoDebugToConsole = false;
+            public static Logger? Instance { get; set; }
+            // When true, log file lines will also be written to Console (same format)
+            public static bool IsDebugEnabled = false;
             private readonly object _lock = new object();
             private readonly System.IO.StreamWriter _writer;
-            public SimpleLogger(string path)
+            public Logger(string path)
             {
                 // Open the file with shared read/write so other writers (e.g., File.AppendAllText)
                 // can append concurrently for diagnostic entries.
@@ -1289,20 +1323,23 @@ namespace ToastCloser
                 Info($"===== log start: {DateTime.Now:yyyy/MM/dd HH:mm:ss} =====");
             }
             public void Info(string m) => Write("INFO", m);
-            public void Debug(string m)
+            public void Debug(string m) => Write("DEBUG", m);
+            public void Debug(Func<string> mf)
             {
-                Write("DEBUG", m);
-                if (EchoDebugToConsole)
-                {
-                    try { Console.WriteLine($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} [DEBUG] {m}"); } catch { }
-                }
+                if (!IsDebugEnabled) return;
+                try { Debug(mf()); } catch { }
             }
+            public void Warn(string m) => Write("WARN", m);
             public void Error(string m) => Write("ERROR", m);
             private void Write(string level, string m)
             {
+                // If DEBUG and debug disabled, skip writing anywhere
+                if (string.Equals(level, "DEBUG", StringComparison.OrdinalIgnoreCase) && !IsDebugEnabled) return;
+                var line = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} [{level}] {m}";
                 lock (_lock)
                 {
-                    _writer.WriteLine($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} [{level}] {m}");
+                    try { _writer.WriteLine(line); } catch { }
+                    try { Console.WriteLine(line); } catch { }
                 }
             }
             public void Dispose() => _writer?.Dispose();
@@ -1420,6 +1457,9 @@ namespace ToastCloser
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         public static extern bool GetCursorPos(out System.Drawing.Point pt);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+        public static extern int MessageBoxW(IntPtr hWnd, string lpText, string lpCaption, uint uType);
 
         public const uint GA_PARENT = 1;
     }
