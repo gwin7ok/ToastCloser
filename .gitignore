@@ -24,4 +24,7 @@ tools/**/obj/
 # Ignore publish outputs
 publish/
 
+# Ignore local logs directory (relative path `logs/`)
+logs/
+
 

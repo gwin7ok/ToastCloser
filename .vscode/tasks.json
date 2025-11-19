@@ -34,7 +34,6 @@
         "true",
         "--display-limit-seconds=10",
         "--poll-interval-seconds=2",
-        "--preserve-history",
         "--preserve-history-mode=noticecenter",
         "--preserve-history-idle-ms=2000",
         "--detection-timeout-ms=1000",

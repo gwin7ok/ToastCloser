@@ -46,7 +46,10 @@ namespace ToastCloser
             double minSeconds = 10.0;
             double poll = 1.0;
             bool detectOnly = false;
-            bool preserveHistory = false;
+            // Default behaviour: preserve-history mode is enabled by default.
+            // This opens the Notification Center / Quick Settings to move toasts to history
+            // rather than attempting to close individual toast UI elements.
+            bool preserveHistory = true;
             bool wmCloseOnly = false;
             bool skipFallback = false;
             int preserveHistoryIdleMs = 2000; // default: require 2s idle
@@ -62,11 +65,7 @@ namespace ToastCloser
                 // remove flag so positional parsing below is simpler
                 argList = argList.Where(a => a != "--detect-only" && a != "--no-auto-close").ToList();
             }
-            if (argList.Contains("--preserve-history"))
-            {
-                preserveHistory = true;
-                argList = argList.Where(a => a != "--preserve-history").ToList();
-            }
+            // NOTE: --preserve-history option removed. preserveHistory is now default=true.
             if (argList.Contains("--verbose-log"))
             {
                 _verboseLog = true;
@@ -975,89 +974,123 @@ namespace ToastCloser
                                     logger.Error($"key={key} preserve-history failed: {ex.Message}");
                                 }
                             }
-                            else
-                            {
-                                // NEW: Try WM_CLOSE first to see if closing via WM_CLOSE preserves history.
-                                string? closedBy = null;
-                                try
+                                else
                                 {
-                                    // Determine host HWND: prefer element's NativeWindowHandle, else try to find host CoreWindow two levels up
-                                    IntPtr hostHwnd = IntPtr.Zero;
-                                    var native = w.Properties.NativeWindowHandle.ValueOrDefault;
-                                    if (native != 0) hostHwnd = new IntPtr(native);
-                                    else hostHwnd = FindHostWindowHandle(w);
-
-                                    if (hostHwnd != IntPtr.Zero)
+                                    // NEW: Do NOT use WM_CLOSE posting as a fallback. Instead:
+                                    // 1) Try WindowPattern.Close() if supported by the element
+                                    // 2) If that fails, fall back to invoking the '閉じる' / 'Close' button via UIA
+                                    string? closedBy = null;
+                                    try
                                     {
-                                        long hval = hostHwnd.ToInt64();
-                                        if (!postedHwnds.Contains(hval))
+                                        // Try WindowPattern.Close() only. Do NOT fall back to Invoke or WM_CLOSE here.
+                                        bool attempted = false;
+                                        try
                                         {
-                                            NativeMethods.PostMessage(hostHwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                                            string hostClass = string.Empty;
-                                            try
+                                            if (w.Patterns != null && w.Patterns.Window != null && w.Patterns.Window.IsSupported)
                                             {
-                                                var csb = new System.Text.StringBuilder(256);
-                                                var clenHost = NativeMethods.GetClassName(hostHwnd, csb, csb.Capacity);
-                                                if (clenHost > 0) hostClass = csb.ToString();
-                                            }
-                                            catch { }
-                                            var pm = $"key={key} Posted WM_CLOSE to hwnd 0x{hval:X} class={hostClass} (attempt before Invoke to prefer history retention)";
-                                            LogConsole(pm);
-                                            logger.Info(pm);
-                                            postedHwnds.Add(hval);
-                                            // give the window a short moment to process WM_CLOSE
-                                            Thread.Sleep(250);
-                                            try
-                                            {
-                                                var className = new System.Text.StringBuilder(256);
-                                                var clen = NativeMethods.GetClassName(hostHwnd, className, className.Capacity);
-                                                if (clen == 0)
+                                                attempted = true;
+                                                try
                                                 {
-                                                    closed = true; // window gone
-                                                    closedBy = "WM_CLOSE";
+                                                    w.Patterns.Window.Pattern.Close();
+                                                    closed = true;
+                                                    closedBy = "WindowPattern.Close";
+                                                    LogConsole($"key={key} Attempted WindowPattern.Close");
+                                                    logger.Info($"key={key} Attempted WindowPattern.Close");
+                                                }
+                                                catch (Exception ex)
+                                                {
+                                                    logger.Debug($"key={key} WindowPattern.Close threw: {ex.Message}");
                                                 }
                                             }
-                                            catch { }
                                         }
-                                        else
-                                        {
-                                            // already posted WM_CLOSE for this host; assume it will close children
-                                            closed = true;
-                                            closedBy = "WM_CLOSE(alreadyPosted)";
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // no host hwnd available; fall back to invoking the close button unless wmCloseOnly is set
-                                        if (!wmCloseOnly && TryInvokeCloseButton(w, cf))
-                                        {
-                                            closed = true;
-                                            closedBy = "Invoke";
-                                        }
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    logger.Error($"key={key} Error during WM_CLOSE-first attempt: {ex.Message}");
-                                }
+                                        catch { }
 
-                                if (!closed)
-                                {
-                                    // If WM_CLOSE did not close it (or couldn't be sent), try the UIA Invoke close button
-                                    if (!wmCloseOnly && TryInvokeCloseButton(w, cf))
+                                        if (!attempted)
+                                        {
+                                            // Log that WindowPattern was not present/supported for diagnostics
+                                            LogConsole($"key={key} WindowPattern not supported on element; not attempting Invoke or WM_CLOSE as per policy");
+                                            logger.Info($"key={key} WindowPattern not supported on element; skipping other fallbacks");
+
+                                            // Additional diagnostics: log element metadata to help root-cause analysis
+                                            try
+                                            {
+                                                IntPtr nativeHwnd = IntPtr.Zero;
+                                                try
+                                                {
+                                                    var nv = w.Properties.NativeWindowHandle.ValueOrDefault;
+                                                    if (nv != 0) nativeHwnd = new IntPtr(nv);
+                                                }
+                                                catch { }
+                                                var className = w.ClassName ?? string.Empty;
+                                                var aid = string.Empty;
+                                                try { aid = w.Properties.AutomationId.ValueOrDefault ?? string.Empty; } catch { }
+                                                var rid = SafeGetRuntimeIdString(w);
+                                                var pid = SafeGetProcessId(w);
+                                                var rect = w.BoundingRectangle;
+                                                logger.Info($"key={key} Diagnostics: class={className} aid={aid} nativeHandle=0x{nativeHwnd.ToInt64():X} pid={pid} rid={rid} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
+
+                                                int textCount = 0;
+                                                try
+                                                {
+                                                    var tnodes = w.FindAllDescendants(cf.ByControlType(ControlType.Text));
+                                                    textCount = tnodes?.Length ?? 0;
+                                                }
+                                                catch { }
+                                                logger.Info($"key={key} Diagnostics: textNodeCount={textCount}");
+
+                                                // Check for a close button descendant (exists but we will NOT invoke)
+                                                bool hasCloseBtn = false;
+                                                try
+                                                {
+                                                    var btnCond = cf.ByControlType(ControlType.Button).And(cf.ByName("閉じる").Or(cf.ByName("Close")));
+                                                    var btn = w.FindFirstDescendant(btnCond);
+                                                    hasCloseBtn = btn != null;
+                                                }
+                                                catch { }
+                                                logger.Info($"key={key} Diagnostics: hasCloseButton={hasCloseBtn}");
+
+                                                // Attempt to locate a host HWND (for debugging only)
+                                                try
+                                                {
+                                                    var hostHwnd = FindHostWindowHandle(w);
+                                                    if (hostHwnd != IntPtr.Zero)
+                                                    {
+                                                        var csb = new System.Text.StringBuilder(256);
+                                                        var clenHost = NativeMethods.GetClassName(hostHwnd, csb, csb.Capacity);
+                                                        var hostClass = clenHost > 0 ? csb.ToString() : string.Empty;
+                                                        var titleSb = new System.Text.StringBuilder(256);
+                                                        NativeMethods.GetWindowText(hostHwnd, titleSb, titleSb.Capacity);
+                                                        var hostTitle = titleSb.ToString() ?? string.Empty;
+                                                        logger.Info($"key={key} Diagnostics: hostHwnd=0x{hostHwnd.ToInt64():X} hostClass={hostClass} hostTitle=\"{hostTitle}\"");
+                                                    }
+                                                    else
+                                                    {
+                                                        logger.Info($"key={key} Diagnostics: hostHwnd=0 (none found)");
+                                                    }
+                                                }
+                                                catch (Exception ex)
+                                                {
+                                                    logger.Debug($"key={key} Diagnostics: FindHostWindowHandle error: {ex.Message}");
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                logger.Debug($"key={key} Diagnostics logging failed: {ex.Message}");
+                                            }
+                                        }
+                                    }
+                                    catch (Exception ex)
                                     {
-                                        closed = true;
-                                        closedBy = "Invoke";
+                                        logger.Error($"key={key} Error during WindowPattern attempt: {ex.Message}");
+                                    }
+
+                                    if (closed && !string.IsNullOrEmpty(closedBy))
+                                    {
+                                        var cbMsg = $"key={key} ClosedBy={closedBy}";
+                                        LogConsole(cbMsg);
+                                        logger.Info(cbMsg);
                                     }
                                 }
-
-                                if (closed && !string.IsNullOrEmpty(closedBy))
-                                {
-                                    var cbMsg = $"key={key} ClosedBy={closedBy}";
-                                    LogConsole(cbMsg);
-                                    logger.Info(cbMsg);
-                                }
-                            }
                             // NOTE: hard timeout behavior (posting WM_CLOSE) was removed
                             // was removed to avoid forced closes that may leave Quick Settings open
                             // or otherwise disrupt the desktop state. If needed, implement a
