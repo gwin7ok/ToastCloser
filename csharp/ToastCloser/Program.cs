@@ -50,6 +50,7 @@ namespace ToastCloser
             bool wmCloseOnly = false;
             bool skipFallback = false;
             int preserveHistoryIdleMs = 2000; // default: require 2s idle
+            int preserveHistoryMaxMonitorMs = 15000; // default: 15s max monitoring
             // detection timeout (ms) for UIA searches to avoid long blocking calls after close actions
             int detectionTimeoutMs = 2000; // default: 2000ms
 
@@ -88,6 +89,15 @@ namespace ToastCloser
                 var part = idleArg.Split('=');
                 if (part.Length == 2 && int.TryParse(part[1], out var v)) preserveHistoryIdleMs = Math.Max(0, v);
                 argList = argList.Where(a => !a.StartsWith("--preserve-history-idle-ms=")).ToList();
+            }
+
+            // optional max monitor time: --preserve-history-max-monitor-seconds=seconds
+            var phMaxArg = argList.FirstOrDefault(a => a.StartsWith("--preserve-history-max-monitor-seconds="));
+            if (!string.IsNullOrEmpty(phMaxArg))
+            {
+                var part = phMaxArg.Split('=');
+                if (part.Length == 2 && double.TryParse(part[1], out var vv)) preserveHistoryMaxMonitorMs = (int)Math.Max(0.0, vv * 1000.0);
+                argList = argList.Where(a => !a.StartsWith("--preserve-history-max-monitor-seconds=")).ToList();
             }
 
             // Prefer named options: --display-limit-seconds=, --poll-interval-seconds=
@@ -232,7 +242,8 @@ namespace ToastCloser
                                 if (oldestElapsedMs >= monitorThresholdMs)
                                 {
                                     _monitoringStarted = true;
-                                    Logger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs})");
+                                    var monitoringStart = DateTime.UtcNow;
+                                    Logger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs} maxMonitorMs={preserveHistoryMaxMonitorMs})");
 
                                     // Immediate one-shot poll to capture very recent input
                                     try
@@ -267,7 +278,7 @@ namespace ToastCloser
                                     }
                                     catch { }
 
-                                    // Monitoring loop: poll every 200ms until idle condition satisfied
+                                    // Monitoring loop: poll every 200ms until idle condition satisfied or max-monitor timeout
                                     while (true)
                                     {
                                         try { Thread.Sleep(200); } catch { }
@@ -308,6 +319,36 @@ namespace ToastCloser
 
                                         try
                                         {
+                                            // Check for max monitor timeout first
+                                            var monitorElapsedMs = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
+                                            if (preserveHistoryMaxMonitorMs > 0 && monitorElapsedMs >= preserveHistoryMaxMonitorMs)
+                                            {
+                                                Logger.Instance?.Info($"Preserve-history monitor timed out after {monitorElapsedMs}ms (max {preserveHistoryMaxMonitorMs}ms); proceeding to send shortcut");
+                                                // Treat as idle: toggle and clear tracked
+                                                if (string.Equals(preserveHistoryMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winADelayMs);
+                                                    Logger.Instance?.Info("Notification Center toggled (preserve-history: timeout)");
+                                                }
+                                                else
+                                                {
+                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winADelayMs);
+                                                    Logger.Instance?.Info("Action Center toggled (preserve-history: timeout)");
+                                                }
+                                                try
+                                                {
+                                                    var dedup = tracked.Keys.ToList();
+                                                    foreach (var k in dedup)
+                                                    {
+                                                        try { tracked.Remove(k); } catch { }
+                                                    }
+                                                    groups.Clear();
+                                                }
+                                                catch { }
+                                                _monitoringStarted = false;
+                                                break;
+                                            }
+
                                             uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(_lastKeyboardTick, _lastMouseTick));
                                             if (elapsedSinceLastInput >= (uint)preserveHistoryIdleMs)
                                             {
