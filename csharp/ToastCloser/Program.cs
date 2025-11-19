@@ -19,6 +19,10 @@ namespace ToastCloser
         private static uint _lastKeyboardTick = 0;
         private static uint _lastMouseTick = 0;
         private static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0,0);
+            // monitoring state: whether we've started preserve-history monitoring (cleared after idle-success)
+            private static bool _monitoringStarted = false;
+            // verbose debug logging flag (set via --verbose-log)
+            private static bool _verboseLog = false;
 
         static void Main(string[] args)
         {
@@ -44,6 +48,11 @@ namespace ToastCloser
             {
                 preserveHistory = true;
                 argList = argList.Where(a => a != "--preserve-history").ToList();
+            }
+            if (argList.Contains("--verbose-log"))
+            {
+                _verboseLog = true;
+                argList = argList.Where(a => a != "--verbose-log").ToList();
             }
             if (argList.Contains("--wm-close-only"))
             {
@@ -163,42 +172,145 @@ namespace ToastCloser
             {
                 try
                 {
-                    // Update keyboard/mouse last-activity ticks
-                    try
+                    // NOTE: Do NOT perform regular keyboard/mouse polling on every scan.
+                    // Monitoring for preserve-history is started only when the oldest tracked
+                    // toast's elapsed time reaches (displayLimitMs - preserveHistoryIdleMs).
+                    // If monitoring should start, enter the monitoring loop (which performs
+                    // immediate poll and then 200ms-interval polling) and block Toast search
+                    // until monitoring finishes.
+                    if (preserveHistory && !_monitoringStarted && tracked.Count > 0)
                     {
-                        // mouse
-                        if (NativeMethods.GetCursorPos(out var curPos))
+                        try
                         {
-                            if (curPos.X != _lastCursorPos.X || curPos.Y != _lastCursorPos.Y)
+                            int displayLimitMs = (int)(minSeconds * 1000);
+                            int monitorThresholdMs = Math.Max(0, displayLimitMs - preserveHistoryIdleMs);
+                            var oldest = tracked.Values.OrderBy(t => t.FirstSeen).FirstOrDefault();
+                            if (oldest != null)
                             {
-                                _lastCursorPos = curPos;
-                                _lastMouseTick = (uint)Environment.TickCount;
-                                LogConsole($"Mouse moved to {_lastCursorPos.X},{_lastCursorPos.Y}");
-                            }
-                        }
-                    }
-                    catch { }
-
-                    try
-                    {
-                        // keyboard: consider only real key transitions or down states for common keyboard VKs
-                        for (int vk = 0x01; vk <= 0xFE; vk++)
-                        {
-                            try
-                            {
-                                short s = NativeMethods.GetAsyncKeyState(vk);
-                                bool transition = (s & 0x0001) != 0; // key pressed since last call
-                                bool down = (s & 0x8000) != 0; // key currently down
-                                if (transition || (down && IsKeyboardVirtualKey(vk)))
+                                var oldestElapsedMs = (int)(DateTime.UtcNow - oldest.FirstSeen).TotalMilliseconds;
+                                if (oldestElapsedMs >= monitorThresholdMs)
                                 {
-                                    _lastKeyboardTick = (uint)Environment.TickCount;
-                                    break;
+                                    _monitoringStarted = true;
+                                    LogConsole($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs})");
+                                    SimpleLogger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs})");
+
+                                    // Immediate one-shot poll to capture very recent input
+                                    try
+                                    {
+                                        if (NativeMethods.GetCursorPos(out var ipos))
+                                        {
+                                            _lastCursorPos = ipos;
+                                            _lastMouseTick = (uint)Environment.TickCount;
+                                            if (_verboseLog) SimpleLogger.Instance?.Debug($"ImmediatePoll: Mouse at {ipos.X},{ipos.Y}");
+                                        }
+                                    }
+                                    catch { }
+
+                                    try
+                                    {
+                                        // limited key scan: transition bit only, limited to likely keyboard VKs + mouse buttons
+                                        for (int vk = 0x01; vk <= 0xFE; vk++)
+                                        {
+                                            try
+                                            {
+                                                short s = NativeMethods.GetAsyncKeyState(vk);
+                                                bool transition = (s & 0x0001) != 0;
+                                                if (transition && (IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
+                                                {
+                                                    _lastKeyboardTick = (uint)Environment.TickCount;
+                                                    if (_verboseLog) SimpleLogger.Instance?.Debug($"ImmediatePoll: Detected vk={vk}");
+                                                    break;
+                                                }
+                                            }
+                                            catch { }
+                                        }
+                                    }
+                                    catch { }
+
+                                    // Monitoring loop: poll every 200ms until idle condition satisfied
+                                    while (true)
+                                    {
+                                        try { Thread.Sleep(200); } catch { }
+
+                                        try
+                                        {
+                                            if (NativeMethods.GetCursorPos(out var cur))
+                                            {
+                                                if (cur.X != _lastCursorPos.X || cur.Y != _lastCursorPos.Y)
+                                                {
+                                                    _lastCursorPos = cur;
+                                                    _lastMouseTick = (uint)Environment.TickCount;
+                                                    if (_verboseLog) SimpleLogger.Instance?.Debug($"Detected mouse movement during monitoring: {cur.X},{cur.Y}");
+                                                }
+                                            }
+                                        }
+                                        catch { }
+
+                                        try
+                                        {
+                                            for (int vk = 0x01; vk <= 0xFE; vk++)
+                                            {
+                                                try
+                                                {
+                                                    short s = NativeMethods.GetAsyncKeyState(vk);
+                                                    bool transition = (s & 0x0001) != 0;
+                                                    if (transition && (IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
+                                                    {
+                                                        _lastKeyboardTick = (uint)Environment.TickCount;
+                                                        if (_verboseLog) SimpleLogger.Instance?.Debug($"Detected keyboard activity during monitoring (vk={vk})");
+                                                        break;
+                                                    }
+                                                }
+                                                catch { }
+                                            }
+                                        }
+                                        catch { }
+
+                                        try
+                                        {
+                                            uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(_lastKeyboardTick, _lastMouseTick));
+                                            if (elapsedSinceLastInput >= (uint)preserveHistoryIdleMs)
+                                            {
+                                                // Idle satisfied: toggle Action/Notification Center and clear tracked
+                                                if (string.Equals(preserveHistoryMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winADelayMs);
+                                                    LogConsole("Notification Center toggled (preserve-history)");
+                                                    SimpleLogger.Instance?.Info("Notification Center toggled (preserve-history)");
+                                                }
+                                                else
+                                                {
+                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winADelayMs);
+                                                    LogConsole("Action Center toggled (preserve-history)");
+                                                    SimpleLogger.Instance?.Info("Action Center toggled (preserve-history)");
+                                                }
+
+                                                // Mark all tracked as handled
+                                                try
+                                                {
+                                                    var dedup = tracked.Keys.ToList();
+                                                    foreach (var k in dedup)
+                                                    {
+                                                        try { tracked.Remove(k); } catch { }
+                                                    }
+                                                    groups.Clear();
+                                                }
+                                                catch { }
+
+                                                _monitoringStarted = false;
+                                                break; // exit monitoring loop
+                                            }
+                                        }
+                                        catch { }
+                                    }
+
+                                    // After monitoring finishes, wait one poll interval before resuming normal scans
+                                    try { Thread.Sleep(TimeSpan.FromSeconds(poll)); } catch { }
                                 }
                             }
-                            catch { }
                         }
+                        catch { }
                     }
-                    catch { }
 
                     lock (automationLock)
                     {
