@@ -523,7 +523,8 @@ namespace ToastCloser
                             // attempt to read RuntimeId (may be array)
                             var runtimeIdStr = SafeGetRuntimeIdString(w);
 
-                            logger.Debug($"key={keyCandidate} Candidate[{_i}]: name={n} class={cn} aid={aidx} pid={pid} rid={runtimeIdStr} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
+                            // Candidate details previously logged here as a separate DEBUG line.
+                            // We'll fold candidate metadata into the single combined message emitted when a new Found is processed.
                         }
                         catch (Exception ex)
                         {
@@ -615,11 +616,40 @@ namespace ToastCloser
                             // Use contentDisplay (filtered) to avoid duplicating name content
                             var msg = $"key={key} | Found | group={assignedGroup} | method={methodStr} | pid={pidVal2} | name=\"{safeName2}\"";
                             if (!string.IsNullOrEmpty(contentDisplay)) msg += $" | content=\"{contentDisplay}\"";
-                            // Console: show the detailed line (for debugging)
-                            LogConsole(msg);
-                            // File: write a concise, user-friendly Japanese message (avoid duplicating content)
-                            var infoMsg = $"新しい通知があります。key={key} | Found | group={assignedGroup} | method={methodStr} | pid={pidVal2} | name=\"{cleanName}\"";
-                            logger.Info(infoMsg);
+                            // Combine candidate metadata and found details into a single line,
+                            // then emit that message both as DEBUG and as INFO (per user request).
+                            try
+                            {
+                                var rid2 = SafeGetRuntimeIdString(w);
+                                var rect2 = w.BoundingRectangle;
+                                var cn2 = w.ClassName ?? string.Empty;
+                                var aidx2 = w.Properties.AutomationId.ValueOrDefault ?? string.Empty;
+                                // INFO: concise, user-facing message
+                                var infoMsg = $"key={key} | Found | group={assignedGroup} | method={methodStr} | pid={pidVal2} | name=\"{cleanName}\"";
+                                if (!string.IsNullOrEmpty(contentDisplay)) infoMsg += $" | content=\"{contentDisplay}\"";
+
+                                // DEBUG: append raw name, contentSummary, UIA metadata and a text node count
+                                string rawNameDbg = safeName2 ?? string.Empty;
+                                string contentSummaryDbg = contentSummary ?? string.Empty;
+                                int textCount = 0;
+                                try
+                                {
+                                    var tnodes = w.FindAllDescendants(cf.ByControlType(ControlType.Text));
+                                    textCount = tnodes?.Length ?? 0;
+                                }
+                                catch { }
+
+                                var debugMsg = infoMsg + $" | rawName=\"{rawNameDbg}\" | contentSummary=\"{contentSummaryDbg}\" | class={cn2} aid={aidx2} rid={rid2} rect={rect2.Left}-{rect2.Top}-{rect2.Right}-{rect2.Bottom} | textCount={textCount}";
+
+                                logger.Debug(() => debugMsg);
+                                logger.Info(infoMsg);
+                            }
+                            catch
+                            {
+                                // Fallback: safe minimal messages
+                                logger.Debug(() => msg);
+                                logger.Info($"新しい通知があります。key={key} | Found | group={assignedGroup} | method={methodStr} | pid={pidVal2} | name=\"{cleanName}\"");
+                            }
                             continue;
                         }
 
@@ -627,8 +657,8 @@ namespace ToastCloser
                         var groupStart = groups.ContainsKey(groupId) ? groups[groupId] : tracked[key].FirstSeen;
                         var elapsed = (DateTime.UtcNow - groupStart).TotalSeconds;
                         var msgElapsed = $"key={key} | group={groupId} | elapsed={elapsed:0.0}s";
-                        LogConsole(msgElapsed);
-                        logger.Debug(msgElapsed);
+                        // Single DEBUG output for elapsed; avoid duplicating INFO
+                        logger.Debug(() => msgElapsed);
 
                         // File: log a concise message indicating the notification is still present
                         try
@@ -638,9 +668,8 @@ namespace ToastCloser
                             var pidStored = stored.Pid;
                             var nameStored = stored.ShortName ?? string.Empty;
                             var stillMsg = $"閉じられていない通知があります　key={key} | Found | group={groupId} | method={methodStored} | pid={pidStored} | name=\"{nameStored}\" (elapsed {elapsed:0.0})";
+                            // Single INFO write (logger writes both file and console)
                             logger.Info(stillMsg);
-                            // Also print to console so the user can see detection each scan
-                            LogConsole(stillMsg);
                         }
                         catch { }
 
