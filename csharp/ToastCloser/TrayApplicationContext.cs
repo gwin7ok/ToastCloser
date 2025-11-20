@@ -44,46 +44,46 @@ namespace ToastCloser
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(exitItem);
 
-            // Do not assign ContextMenuStrip directly; show it manually so we can control position
+            // Attach Opened to adjust position after the menu is shown so we can keep default closing behaviour
+            _menu.Opened += Menu_Opened;
+
+            // Assign ContextMenuStrip to the tray icon so default closing behaviour remains (we cancel Opening and show manually)
+            _trayIcon.ContextMenuStrip = _menu;
             _trayIcon.DoubleClick += (s, e) => ToggleConsole();
-            _trayIcon.MouseUp += TrayIcon_MouseUp;
 
             // Show a balloon tip on first run
             try { _trayIcon.ShowBalloonTip(2000, "ToastCloser", "Tray mode: 右クリックで設定・コンソールを開けます", ToolTipIcon.Info); } catch { }
         }
 
-        private void TrayIcon_MouseUp(object? sender, MouseEventArgs e)
+        private void Menu_Opened(object? sender, EventArgs e)
         {
             try
             {
-                if (e.Button != MouseButtons.Right) return;
                 var cursorPos = Cursor.Position;
                 var screen = Screen.FromPoint(cursorPos);
                 var working = screen.WorkingArea;
                 var bounds = screen.Bounds;
 
-                // Preferred size for menu
-                var menuSize = _menu.GetPreferredSize(Size.Empty);
-                int menuW = menuSize.Width;
-                int menuH = menuSize.Height;
+                // Current menu bounds
+                var menuBounds = _menu.Bounds;
+                int menuW = menuBounds.Width;
+                int menuH = menuBounds.Height;
 
                 bool taskbarAtTop = working.Top > bounds.Top;
 
-                int x = cursorPos.X;
-                int y = cursorPos.Y;
+                int x = menuBounds.Left;
+                int y = menuBounds.Top;
 
                 int spaceBelow = working.Bottom - cursorPos.Y;
                 int spaceAbove = cursorPos.Y - working.Top;
 
                 if (taskbarAtTop)
                 {
-                    // prefer showing below cursor
                     if (spaceBelow >= menuH) y = cursorPos.Y + 10;
                     else y = Math.Max(working.Top, working.Bottom - menuH);
                 }
                 else
                 {
-                    // prefer showing above cursor
                     if (spaceAbove >= menuH) y = cursorPos.Y - menuH;
                     else if (spaceBelow >= menuH) y = cursorPos.Y + 10;
                     else y = Math.Max(working.Top, working.Bottom - menuH);
@@ -92,10 +92,17 @@ namespace ToastCloser
                 if (x + menuW > working.Right) x = Math.Max(working.Left, working.Right - menuW);
                 if (x < working.Left) x = working.Left;
 
-                _menu.Show(x, y);
+                // Move the menu if needed
+                if (x != menuBounds.Left || y != menuBounds.Top)
+                {
+                    // Re-show the menu at the desired screen location to reposition it
+                    _menu.Show(new System.Drawing.Point(x, y));
+                }
             }
             catch { }
         }
+
+        
 
         private void ShowSettings()
         {
