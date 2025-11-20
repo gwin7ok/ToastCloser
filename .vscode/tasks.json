@@ -48,7 +48,7 @@
     }
     ,
     {
-      "label": "Send: BurntToast attribution test",
+      "label": "Send: Test",
       "type": "shell",
       "command": "pwsh",
       "args": [
@@ -64,7 +64,7 @@
     }
     ,
     {
-      "label": "Send: delayed BurntToast attribution test (5s)",
+      "label": "Send: Test delay",
       "type": "shell",
       "command": "pwsh",
       "args": [
@@ -79,7 +79,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Publish: ToastCloser (Release win-x64 single-file)",
+      "label": "Publish: (Release win-x64 single-file)",
       "type": "shell",
       "command": "dotnet",
       "args": [
