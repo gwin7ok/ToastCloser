@@ -59,7 +59,7 @@ namespace ToastCloser
             bool wmCloseOnly = false;
             bool skipFallback = false;
             int shortcutKeyWaitIdleMS = 2000; // default: require 2s idle
-            int shortcutKeyMaxWaitMs = 15000; // default: 15s max monitoring
+            int shortcutKeyMaxWaitMS = 15000; // default: 15s max monitoring
             string shortcutKeyMode = "noticecenter";
             int winShortcutKeyIntervalMS = 300;
             // detection timeout (ms) for UIA searches to avoid long blocking calls after close actions
@@ -76,7 +76,7 @@ namespace ToastCloser
             shortcutKeyMode = cfg.ShortcutKeyMode ?? "noticecenter";
             shortcutKeyWaitIdleMS = cfg.ShortcutKeyWaitIdleMS;
             // Config stores max wait in seconds; convert to milliseconds for internal usage
-            shortcutKeyMaxWaitMs = Math.Max(0, cfg.ShortcutKeyMaxWaitSeconds * 1000);
+            shortcutKeyMaxWaitMS = Math.Max(0, cfg.ShortcutKeyMaxWaitSeconds * 1000);
             detectionTimeoutMS = cfg.DetectionTimeoutMS;
             winShortcutKeyIntervalMS = cfg.WinShortcutKeyIntervalMS;
             _verboseLog = cfg.VerboseLog;
@@ -158,7 +158,7 @@ namespace ToastCloser
                 {
                     // NOTE: Do NOT perform regular keyboard/mouse polling on every scan.
                     // Monitoring for preserve-history is started only when the oldest tracked
-                    // toast's elapsed time reaches (displayLimitMs - shortcutKeyWaitIdleMS).
+                    // toast's elapsed time reaches (displayLimitMS - shortcutKeyWaitIdleMS).
                     // If monitoring should start, enter the monitoring loop (which performs
                     // immediate poll and then 200ms-interval polling) and block Toast search
                     // until monitoring finishes.
@@ -166,17 +166,17 @@ namespace ToastCloser
                     {
                         try
                         {
-                            int displayLimitMs = (int)(minSeconds * 1000);
-                            int monitorThresholdMs = Math.Max(0, displayLimitMs - shortcutKeyWaitIdleMS);
+                            int displayLimitMS = (int)(minSeconds * 1000);
+                            int monitorThresholdMS = Math.Max(0, displayLimitMS - shortcutKeyWaitIdleMS);
                             var oldest = tracked.Values.OrderBy(t => t.FirstSeen).FirstOrDefault();
                             if (oldest != null)
                             {
-                                var oldestElapsedMs = (int)(DateTime.UtcNow - oldest.FirstSeen).TotalMilliseconds;
-                                if (oldestElapsedMs >= monitorThresholdMs)
+                                var oldestElapsedMS = (int)(DateTime.UtcNow - oldest.FirstSeen).TotalMilliseconds;
+                                if (oldestElapsedMS >= monitorThresholdMS)
                                 {
                                     _monitoringStarted = true;
                                     var monitoringStart = DateTime.UtcNow;
-                                    Logger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMs={oldestElapsedMs} monitorThresholdMs={monitorThresholdMs} maxMonitorMs={shortcutKeyMaxWaitMs})");
+                                    Logger.Instance?.Info($"Started preserve-history monitoring (oldestElapsedMS={oldestElapsedMS} monitorThresholdMS={monitorThresholdMS} maxMonitorMS={shortcutKeyMaxWaitMS})");
 
                                     // Immediate one-shot poll to capture very recent input
                                     try
@@ -253,10 +253,10 @@ namespace ToastCloser
                                         try
                                         {
                                             // Check for max monitor timeout first
-                                            var monitorElapsedMs = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
-                                            if (shortcutKeyMaxWaitMs > 0 && monitorElapsedMs >= shortcutKeyMaxWaitMs)
+                                            var monitorElapsedMS = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
+                                            if (shortcutKeyMaxWaitMS > 0 && monitorElapsedMS >= shortcutKeyMaxWaitMS)
                                             {
-                                                Logger.Instance?.Info($"Preserve-history monitor timed out after {monitorElapsedMs}ms (max {shortcutKeyMaxWaitMs}ms); proceeding to send shortcut");
+                                                Logger.Instance?.Info($"Preserve-history monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); proceeding to send shortcut");
                                                 // Treat as idle: toggle and clear tracked
                                                 if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                 {
@@ -433,7 +433,7 @@ namespace ToastCloser
                     else
                     {
                         Logger.Instance?.Warn($"CoreWindow search timed out after {detectionTimeoutMS}ms; skipping this scan to avoid long blocking. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
-                        Logger.Instance?.Debug($"CoreWindow search timed out after {detectionTimeoutMS}ms and was cancelled for this poll (durationMs={detectionTimeoutMS})");
+                        Logger.Instance?.Debug($"CoreWindow search timed out after {detectionTimeoutMS}ms and was cancelled for this poll (durationMS={detectionTimeoutMS})");
                         foundList = new List<FlaUI.Core.AutomationElements.AutomationElement>();
                         usedFallback = false;
 
@@ -479,9 +479,9 @@ namespace ToastCloser
                     }
 
                     var searchEnd = DateTime.UtcNow;
-                    var searchMs = (searchEnd - searchStart).TotalMilliseconds;
-                    LogConsole($"Toast search: end (duration={searchMs:0.0}ms) found={found.Length} usedFallback={usedFallback}");
-                    logger.Debug($"Scan found {found.Length} candidates (usedFallback={usedFallback}) durationMs={searchMs:0.0}");
+                    var searchMS = (searchEnd - searchStart).TotalMilliseconds;
+                    LogConsole($"Toast search: end (duration={searchMS:0.0}ms) found={found.Length} usedFallback={usedFallback}");
+                    logger.Debug($"Scan found {found.Length} candidates (usedFallback={usedFallback}) durationMS={searchMS:0.0}");
                     for (int _i = 0; _i < found.Length; _i++)
                     {
                         var w = found[_i];
@@ -1214,7 +1214,7 @@ namespace ToastCloser
             }
         }
 
-        private static void ToggleShortcutWithDetection(char keyChar, Func<bool> isOpenFunc, int waitMs = 700)
+        private static void ToggleShortcutWithDetection(char keyChar, Func<bool> isOpenFunc, int waitMS = 700)
         {
             bool alreadyOpen = false;
             try { alreadyOpen = isOpenFunc(); } catch { alreadyOpen = false; }
@@ -1245,14 +1245,14 @@ namespace ToastCloser
                     LogConsole(msg);
                 }
                 catch { }
-                Thread.Sleep(waitMs);
+                Thread.Sleep(waitMS);
             }
         }
 
-        private static void ToggleActionCenterViaWinA(int waitMs = 700)
+        private static void ToggleActionCenterViaWinA(int waitMS = 700)
         {
             // Backwards-compatible wrapper that toggles Action Center via Win+A
-            ToggleShortcutWithDetection('A', IsActionCenterOpen, waitMs);
+            ToggleShortcutWithDetection('A', IsActionCenterOpen, waitMS);
         }
 
         private static uint GetIdleMilliseconds()
