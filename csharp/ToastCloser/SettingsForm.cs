@@ -305,7 +305,10 @@ namespace ToastCloser
                 tb.HandleCreated += (s, e) => UpdateTextBoxRect(tb);
                 tb.SizeChanged += (s, e) => UpdateTextBoxRect(tb);
                 tb.FontChanged += (s, e) => UpdateTextBoxRect(tb);
-                tb.TextChanged += (s, e) => UpdateTextBoxRect(tb);
+                // NOTE: removed tb.TextChanged subscription to avoid re-applying the
+                // formatting rectangle on every keystroke, which caused the text to
+                // visually shift downward while editing. Keeping updates on handle
+                // creation / resize / font change is sufficient for stable layout.
                 // Initial set
                 if (tb.IsHandleCreated) UpdateTextBoxRect(tb);
             }
