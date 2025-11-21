@@ -38,9 +38,6 @@ namespace ToastCloser
             try { consoleItem.Font = new Font(consoleItem.Font, FontStyle.Bold); } catch { }
             consoleItem.Click += (s, e) => ToggleConsole();
 
-            var reloadItem = new ToolStripMenuItem("設定を再読み込み");
-            try { reloadItem.Font = new Font(reloadItem.Font, FontStyle.Regular); } catch { }
-            reloadItem.Click += (s, e) => ReloadConfig();
 
             var exitItem = new ToolStripMenuItem("終了");
             try { exitItem.Font = new Font(exitItem.Font, FontStyle.Regular); } catch { }
@@ -49,7 +46,6 @@ namespace ToastCloser
 
             _menu.Items.Add(settingsItem);
             _menu.Items.Add(consoleItem);
-            _menu.Items.Add(reloadItem);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(exitItem);
 
@@ -154,19 +150,6 @@ namespace ToastCloser
             else
             {
                 if (_consoleForm.Visible) _consoleForm.Hide(); else _consoleForm.Show();
-            }
-        }
-
-        private void ReloadConfig()
-        {
-            try
-            {
-                _config = Config.Load();
-                MessageBox.Show("設定を再読み込みしました。", "ToastCloser", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("設定の再読み込みに失敗しました: " + ex.Message);
             }
         }
 

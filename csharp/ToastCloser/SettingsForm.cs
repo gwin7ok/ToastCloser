@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.IO;
 using System.Drawing;
@@ -104,56 +105,66 @@ namespace ToastCloser
             // Use a TableLayoutPanel for consistent two-column layout (label / control) and an optional third column
             var tl = new TableLayoutPanel();
             tl.ColumnCount = 3;
-            tl.RowCount = 12;
+            tl.RowCount = 13;
             tl.AutoSize = false;
             tl.AutoSizeMode = AutoSizeMode.GrowOnly;
             tl.Dock = DockStyle.Fill;
             tl.Location = new System.Drawing.Point(10, 10);
             tl.Padding = new Padding(12);
-            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380F)); // label column (widened to avoid wrapping)
-            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220F)); // control column
+            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 373F)); // label column (reduced to ~2/3 of previous width)
+            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280F)); // control column
             tl.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));  // extra (e.g., open logs button)
             // Set explicit row heights to increase vertical spacing and avoid cramped labels
             for (int i = 0; i < tl.RowCount; i++)
             {
-                tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+                if (i == 11) // buttons row
+                    tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+                else if (i == 12) // note row
+                    tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+                else
+                    tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             }
 
             // Labels
-            var lbl1 = new Label() { Text = "DisplayLimitSeconds:", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lbl2 = new Label() { Text = "PollIntervalSeconds:", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lblLogLimit = new Label() { Text = "LogArchiveLimit (max archived files):", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lblMode = new Label() { Text = "ShortcutKeyMode:", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lblIdle = new Label() { Text = "ShortcutKeyWaitIdleMS:", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lblMaxWait = new Label() { Text = "ShortcutKeyMaxWaitSeconds:", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lblDetect = new Label() { Text = "DetectionTimeoutMS:", Anchor = AnchorStyles.Left, AutoSize = true };
-            var lblWin = new Label() { Text = "WinShortcutKeyIntervalMS:", Anchor = AnchorStyles.Left, AutoSize = true };
+            // Labels: use fixed height and MiddleLeft alignment so text is vertically centered in the row
+            var lbl1 = new Label() { Text = "DisplayLimitSeconds:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lbl2 = new Label() { Text = "PollIntervalSeconds:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lblLogLimit = new Label() { Text = "LogArchiveLimit (max archived files):", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lblMode = new Label() { Text = "ShortcutKeyMode:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lblIdle = new Label() { Text = "ShortcutKeyWaitIdleMS:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lblMaxWait = new Label() { Text = "ShortcutKeyMaxWaitSeconds:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lblDetect = new Label() { Text = "DetectionTimeoutMS:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
+            var lblWin = new Label() { Text = "WinShortcutKeyIntervalMS:", AutoSize = false, Height = 28, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill, Padding = new Padding(6,0,0,0) };
 
             // Controls (ensure existing instances are used)
-            this.txtDisplayLimit = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
-            this.txtPollInterval = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
-            this.txtLogArchiveLimit = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
+            this.txtDisplayLimit = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
+            this.txtPollInterval = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
+            this.txtLogArchiveLimit = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
             this.btnOpenLogs = new Button() { Text = "ログフォルダを開く", Width = 200, Height = 30, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleCenter };
-            this.chkYoutubeOnly = new CheckBox() { Text = "YouTube の通知のみを対象にする", AutoSize = true, Anchor = AnchorStyles.Left };
-            this.cmbShortcutKeyMode = new ComboBox() { Width = 180, DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left };
+            this.chkYoutubeOnly = new CheckBox() { Text = "YouTube の通知のみを対象にする", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12) };
+            this.cmbShortcutKeyMode = new ComboBox() { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2) };
             this.cmbShortcutKeyMode.Items.AddRange(new object[] { "noticecenter", "quicksetting" });
-            this.txtIdleMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
-            this.txtMaxMonitorSeconds = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
-            this.txtDetectionTimeoutMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
-            this.txtWinShortcutKeyIntervalMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left };
-            this.chkDetectOnly = new CheckBox() { Text = "検出のみ (DetectOnly)", AutoSize = true, Anchor = AnchorStyles.Left };
-            this.chkVerbose = new CheckBox() { Text = "VerboseLog", AutoSize = true, Anchor = AnchorStyles.Left };
+            // Wrap the ComboBox in a bordered panel so it visually matches textboxes with a single-line border
+            var pnlComboWrap = new Panel() { Width = 180, Height = 28, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0,12,0,12), Anchor = AnchorStyles.Left };
+            this.cmbShortcutKeyMode.Dock = DockStyle.Fill;
+            pnlComboWrap.Controls.Add(this.cmbShortcutKeyMode);
+            this.txtIdleMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
+            this.txtMaxMonitorSeconds = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
+            this.txtDetectionTimeoutMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
+            this.txtWinShortcutKeyIntervalMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
+            this.chkDetectOnly = new CheckBox() { Text = "検出のみ (DetectOnly)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12) };
+            this.chkVerbose = new CheckBox() { Text = "VerboseLog", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12) };
 
             // Buttons
-            this.btnSave = new Button() { Text = "保存", Width = 100, Height = 32, TextAlign = ContentAlignment.MiddleCenter };
-            this.btnCancel = new Button() { Text = "キャンセル", Width = 140, Height = 32, TextAlign = ContentAlignment.MiddleCenter };
+            this.btnSave = new Button() { Text = "保存", Width = 100, Height = 32, TextAlign = ContentAlignment.MiddleCenter, Margin = new Padding(6,8,6,8) };
+            this.btnCancel = new Button() { Text = "キャンセル", Width = 140, Height = 32, TextAlign = ContentAlignment.MiddleCenter, Margin = new Padding(6,8,6,8) };
 
             // Add rows
             tl.Controls.Add(lbl1, 0, 0); tl.Controls.Add(this.txtDisplayLimit, 1, 0);
             tl.Controls.Add(lbl2, 0, 1); tl.Controls.Add(this.txtPollInterval, 1, 1);
             tl.Controls.Add(lblLogLimit, 0, 2); tl.Controls.Add(this.txtLogArchiveLimit, 1, 2); tl.Controls.Add(this.btnOpenLogs, 2, 2);
             tl.Controls.Add(this.chkYoutubeOnly, 0, 3); tl.SetColumnSpan(this.chkYoutubeOnly, 3);
-            tl.Controls.Add(lblMode, 0, 4); tl.Controls.Add(this.cmbShortcutKeyMode, 1, 4);
+            tl.Controls.Add(lblMode, 0, 4); tl.Controls.Add(pnlComboWrap, 1, 4);
             tl.Controls.Add(lblIdle, 0, 5); tl.Controls.Add(this.txtIdleMS, 1, 5);
             tl.Controls.Add(lblMaxWait, 0, 6); tl.Controls.Add(this.txtMaxMonitorSeconds, 1, 6);
             tl.Controls.Add(lblDetect, 0, 7); tl.Controls.Add(this.txtDetectionTimeoutMS, 1, 7);
@@ -161,10 +172,47 @@ namespace ToastCloser
             tl.Controls.Add(this.chkDetectOnly, 0, 9); tl.SetColumnSpan(this.chkDetectOnly, 3);
             tl.Controls.Add(this.chkVerbose, 0, 10); tl.SetColumnSpan(this.chkVerbose, 3);
 
-            // Buttons panel
+            // Buttons + note container: buttons on top, informational note directly beneath
+            var buttonsContainer = new TableLayoutPanel() { ColumnCount = 1, RowCount = 2, AutoSize = true, Dock = DockStyle.Fill };
+            buttonsContainer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            buttonsContainer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var fl = new FlowLayoutPanel() { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Anchor = AnchorStyles.None };
             fl.Controls.Add(this.btnSave); fl.Controls.Add(this.btnCancel);
-            tl.Controls.Add(fl, 0, 11); tl.SetColumnSpan(fl, 3);
+            buttonsContainer.Controls.Add(fl, 0, 0);
+            // Informational note label will be added into the container below the buttons
+            tl.Controls.Add(buttonsContainer, 0, 11); tl.SetColumnSpan(buttonsContainer, 3);
+
+            // Adjust textboxes to vertically center their text
+            AdjustTextBoxVertical(this.txtDisplayLimit);
+            AdjustTextBoxVertical(this.txtPollInterval);
+            AdjustTextBoxVertical(this.txtLogArchiveLimit);
+            AdjustTextBoxVertical(this.txtIdleMS);
+            AdjustTextBoxVertical(this.txtMaxMonitorSeconds);
+            AdjustTextBoxVertical(this.txtDetectionTimeoutMS);
+            AdjustTextBoxVertical(this.txtWinShortcutKeyIntervalMS);
+
+            // Prevent Enter from inserting newlines (defense-in-depth)
+            Action<TextBox> suppressEnter = tb => tb.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; } };
+            suppressEnter(this.txtDisplayLimit);
+            suppressEnter(this.txtPollInterval);
+            suppressEnter(this.txtLogArchiveLimit);
+            suppressEnter(this.txtIdleMS);
+            suppressEnter(this.txtMaxMonitorSeconds);
+            suppressEnter(this.txtDetectionTimeoutMS);
+            suppressEnter(this.txtWinShortcutKeyIntervalMS);
+
+            // Informational note under the buttons: place into tl row 12 so it sits directly beneath the buttons row
+            var lblNote = new Label()
+            {
+                Text = "保存された設定は、アプリ再起動後に有効になります",
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Fill,
+                ForeColor = System.Drawing.SystemColors.ControlDark,
+                Height = 22,
+            };
+            tl.Controls.Add(lblNote, 0, 12);
+            tl.SetColumnSpan(lblNote, 3);
 
             // Finalize form
             this.ClientSize = new System.Drawing.Size(980, 640);
@@ -194,6 +242,48 @@ namespace ToastCloser
             {
                 MessageBox.Show($"ログフォルダを開けませんでした: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+        
+        // --- Helpers for vertically centering text inside TextBox ---
+        private const int EM_SETRECT = 0x00B3;
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int left; public int top; public int right; public int bottom; }
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, ref RECT lParam);
+
+        private void AdjustTextBoxVertical(TextBox tb)
+        {
+            try
+            {
+                if (tb == null) return;
+                tb.Multiline = true;
+                tb.AcceptsReturn = false;
+                // Update rect when handle created or resized
+                tb.HandleCreated += (s, e) => UpdateTextBoxRect(tb);
+                tb.SizeChanged += (s, e) => UpdateTextBoxRect(tb);
+                tb.FontChanged += (s, e) => UpdateTextBoxRect(tb);
+                tb.TextChanged += (s, e) => UpdateTextBoxRect(tb);
+                // Initial set
+                if (tb.IsHandleCreated) UpdateTextBoxRect(tb);
+            }
+            catch { }
+        }
+
+        private void UpdateTextBoxRect(TextBox tb)
+        {
+            try
+            {
+                if (!tb.IsHandleCreated) return;
+                // Measure text height more precisely using single-line flags
+                var sample = string.IsNullOrEmpty(tb.Text) ? "0" : tb.Text;
+                var textSize = TextRenderer.MeasureText(sample, tb.Font, new System.Drawing.Size(tb.ClientSize.Width, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                int textH = textSize.Height;
+                const int VerticalAdjustment = 2; // nudge down a few pixels to visually center across DPI/font combos
+                int top = Math.Max(0, (tb.ClientSize.Height - textH) / 2 + VerticalAdjustment);
+                var rc = new RECT { left = 0, top = top, right = tb.ClientSize.Width, bottom = tb.ClientSize.Height };
+                SendMessage(tb.Handle, EM_SETRECT, IntPtr.Zero, ref rc);
+            }
+            catch { }
         }
         
         private void ApplySavedWindowGeometry(Config cfg)
