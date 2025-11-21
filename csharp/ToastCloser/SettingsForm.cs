@@ -18,6 +18,28 @@ namespace ToastCloser
             LoadValues();
         }
 
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            try
+            {
+                ApplySavedWindowGeometry(_config);
+            }
+            catch { }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // Persist current geometry even if user cancelled
+                SaveCurrentWindowGeometry(_config);
+                try { _config.Save(); } catch { }
+            }
+            catch { }
+            base.OnFormClosing(e);
+        }
+
         private void LoadValues()
         {
             txtDisplayLimit.Text = _config.DisplayLimitSeconds.ToString();
@@ -171,6 +193,73 @@ namespace ToastCloser
             {
                 MessageBox.Show($"ログフォルダを開けませんでした: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+        
+        private void ApplySavedWindowGeometry(Config cfg)
+        {
+            try
+            {
+                // Restore only position (Left/Top). Size is fixed by the program.
+                if (cfg.SettingsLeft != 0 || cfg.SettingsTop != 0)
+                {
+                    this.StartPosition = FormStartPosition.Manual;
+                    var left = cfg.SettingsLeft;
+                    var top = cfg.SettingsTop;
+                    // Use current size for visibility checks
+                    var rect = new System.Drawing.Rectangle(left, top, this.Width, this.Height);
+                    rect = EnsureVisible(rect);
+                    this.Location = rect.Location;
+                }
+                if (!string.IsNullOrEmpty(cfg.SettingsWindowState))
+                {
+                    try
+                    {
+                        if (string.Equals(cfg.SettingsWindowState, "Maximized", StringComparison.OrdinalIgnoreCase)) this.WindowState = FormWindowState.Maximized;
+                        else if (string.Equals(cfg.SettingsWindowState, "Minimized", StringComparison.OrdinalIgnoreCase)) this.WindowState = FormWindowState.Minimized;
+                        else this.WindowState = FormWindowState.Normal;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveCurrentWindowGeometry(Config cfg)
+        {
+            try
+            {
+                var useBounds = (this.WindowState == FormWindowState.Normal) ? this.Bounds : this.RestoreBounds;
+                cfg.SettingsLeft = useBounds.Left;
+                cfg.SettingsTop = useBounds.Top;
+                // Do NOT save width/height for settings window; size is fixed by program.
+                cfg.SettingsWindowState = this.WindowState.ToString();
+            }
+            catch { }
+        }
+
+        private static System.Drawing.Rectangle EnsureVisible(System.Drawing.Rectangle rect)
+        {
+            try
+            {
+                foreach (var s in Screen.AllScreens)
+                {
+                    var wa = s.WorkingArea;
+                    if (wa.IntersectsWith(rect))
+                    {
+                        int left = Math.Max(wa.Left, Math.Min(rect.Left, wa.Right - Math.Min(rect.Width, wa.Width)));
+                        int top = Math.Max(wa.Top, Math.Min(rect.Top, wa.Bottom - Math.Min(rect.Height, wa.Height)));
+                        int width = Math.Min(rect.Width, wa.Width);
+                        int height = Math.Min(rect.Height, wa.Height);
+                        return new System.Drawing.Rectangle(left, top, width, height);
+                    }
+                }
+                var primary = Screen.PrimaryScreen;
+                var p = primary != null ? primary.WorkingArea : (Screen.AllScreens.Length > 0 ? Screen.AllScreens[0].WorkingArea : new System.Drawing.Rectangle(0, 0, rect.Width, rect.Height));
+                int w = Math.Min(rect.Width, p.Width);
+                int h = Math.Min(rect.Height, p.Height);
+                return new System.Drawing.Rectangle(p.Left, p.Top, w, h);
+            }
+            catch { return rect; }
         }
         #endregion
     }

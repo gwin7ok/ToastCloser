@@ -26,6 +26,21 @@ namespace ToastCloser
 
         public static string ConfigFileName => Path.Combine(AppContext.BaseDirectory, "ToastCloser.ini");
 
+        // Console window saved geometry (use 0 to indicate unset)
+        public int ConsoleLeft { get; set; } = 0;
+        public int ConsoleTop { get; set; } = 0;
+        public int ConsoleWidth { get; set; } = 0;
+        public int ConsoleHeight { get; set; } = 0;
+        // Values: Normal, Maximized, Minimized
+        public string ConsoleWindowState { get; set; } = "Normal";
+
+        // Settings window saved geometry
+        public int SettingsLeft { get; set; } = 0;
+        public int SettingsTop { get; set; } = 0;
+        public int SettingsWidth { get; set; } = 0;
+        public int SettingsHeight { get; set; } = 0;
+        public string SettingsWindowState { get; set; } = "Normal";
+
         public void Save()
         {
             try
@@ -44,6 +59,16 @@ namespace ToastCloser
                 lines.Add($"VerboseLog={VerboseLog}");
                 lines.Add($"LogArchiveLimit={LogArchiveLimit}");
                 lines.Add($"YoutubeOnly={YoutubeOnly}");
+                // Console geometry
+                lines.Add($"ConsoleLeft={ConsoleLeft}");
+                lines.Add($"ConsoleTop={ConsoleTop}");
+                lines.Add($"ConsoleWidth={ConsoleWidth}");
+                lines.Add($"ConsoleHeight={ConsoleHeight}");
+                lines.Add($"ConsoleWindowState={ConsoleWindowState}");
+                // Settings geometry: only persist position and state (do not persist size)
+                lines.Add($"SettingsLeft={SettingsLeft}");
+                lines.Add($"SettingsTop={SettingsTop}");
+                lines.Add($"SettingsWindowState={SettingsWindowState}");
                 File.WriteAllLines(ConfigFileName, lines);
             }
             catch { }
@@ -78,6 +103,16 @@ namespace ToastCloser
                         case "VerboseLog": bool.TryParse(val, out var b3); cfg.VerboseLog = b3; break;
                         case "LogArchiveLimit": int.TryParse(val, out var la); cfg.LogArchiveLimit = la; break;
                         case "YoutubeOnly": bool.TryParse(val, out var y1); cfg.YoutubeOnly = y1; break;
+                        case "ConsoleLeft": int.TryParse(val, out var cl); cfg.ConsoleLeft = cl; break;
+                        case "ConsoleTop": int.TryParse(val, out var ct); cfg.ConsoleTop = ct; break;
+                        case "ConsoleWidth": int.TryParse(val, out var cw); cfg.ConsoleWidth = cw; break;
+                        case "ConsoleHeight": int.TryParse(val, out var ch); cfg.ConsoleHeight = ch; break;
+                        case "ConsoleWindowState": cfg.ConsoleWindowState = val; break;
+                        case "SettingsLeft": int.TryParse(val, out var sl); cfg.SettingsLeft = sl; break;
+                        case "SettingsTop": int.TryParse(val, out var st); cfg.SettingsTop = st; break;
+                        case "SettingsWidth": int.TryParse(val, out var sw); cfg.SettingsWidth = sw; break;
+                        case "SettingsHeight": int.TryParse(val, out var sh); cfg.SettingsHeight = sh; break;
+                        case "SettingsWindowState": cfg.SettingsWindowState = val; break;
                     }
                 }
             }

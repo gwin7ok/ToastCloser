@@ -70,6 +70,31 @@ namespace ToastCloser
             catch { }
         }
 
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            try
+            {
+                // Apply saved geometry if present
+                var cfg = Config.Load();
+                ApplySavedWindowGeometry(cfg);
+            }
+            catch { }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // Save current geometry to config
+                var cfg = Config.Load();
+                SaveCurrentWindowGeometry(cfg);
+                cfg.Save();
+            }
+            catch { }
+            base.OnFormClosing(e);
+        }
+
         private void InitializeComponent()
         {
             // Create the auto-scroll toggle button with a subtle background to indicate the
@@ -571,6 +596,78 @@ namespace ToastCloser
         {
             try { if (Program.Logger.Instance != null) Program.Logger.Instance.OnLogLine -= Instance_OnLogLine; } catch { }
             base.OnFormClosed(e);
+        }
+
+        private void ApplySavedWindowGeometry(Config cfg)
+        {
+            try
+            {
+                if (cfg.ConsoleWidth > 0 && cfg.ConsoleHeight > 0)
+                {
+                    this.StartPosition = FormStartPosition.Manual;
+                    var left = cfg.ConsoleLeft;
+                    var top = cfg.ConsoleTop;
+                    var width = cfg.ConsoleWidth;
+                    var height = cfg.ConsoleHeight;
+                    var rect = new System.Drawing.Rectangle(left, top, width, height);
+                    rect = EnsureVisible(rect);
+                    this.Bounds = rect;
+                }
+                if (!string.IsNullOrEmpty(cfg.ConsoleWindowState))
+                {
+                    try
+                    {
+                        if (string.Equals(cfg.ConsoleWindowState, "Maximized", StringComparison.OrdinalIgnoreCase)) this.WindowState = FormWindowState.Maximized;
+                        else if (string.Equals(cfg.ConsoleWindowState, "Minimized", StringComparison.OrdinalIgnoreCase)) this.WindowState = FormWindowState.Minimized;
+                        else this.WindowState = FormWindowState.Normal;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveCurrentWindowGeometry(Config cfg)
+        {
+            try
+            {
+                // If window is maximized, store RestoreBounds so we can restore normal geometry
+                var useBounds = (this.WindowState == FormWindowState.Normal) ? this.Bounds : this.RestoreBounds;
+                cfg.ConsoleLeft = useBounds.Left;
+                cfg.ConsoleTop = useBounds.Top;
+                cfg.ConsoleWidth = useBounds.Width;
+                cfg.ConsoleHeight = useBounds.Height;
+                cfg.ConsoleWindowState = this.WindowState.ToString();
+            }
+            catch { }
+        }
+
+        private static System.Drawing.Rectangle EnsureVisible(System.Drawing.Rectangle rect)
+        {
+            try
+            {
+                // Ensure the rectangle intersects at least one screen's working area; if not, move to primary screen
+                foreach (var s in Screen.AllScreens)
+                {
+                    var wa = s.WorkingArea;
+                    if (wa.IntersectsWith(rect))
+                    {
+                        // Clamp to working area
+                        int left = Math.Max(wa.Left, Math.Min(rect.Left, wa.Right - Math.Min(rect.Width, wa.Width)));
+                        int top = Math.Max(wa.Top, Math.Min(rect.Top, wa.Bottom - Math.Min(rect.Height, wa.Height)));
+                        int width = Math.Min(rect.Width, wa.Width);
+                        int height = Math.Min(rect.Height, wa.Height);
+                        return new System.Drawing.Rectangle(left, top, width, height);
+                    }
+                }
+                // fallback to primary screen
+                var primary = Screen.PrimaryScreen;
+                var p = primary != null ? primary.WorkingArea : (Screen.AllScreens.Length > 0 ? Screen.AllScreens[0].WorkingArea : new System.Drawing.Rectangle(0, 0, rect.Width, rect.Height));
+                int w = Math.Min(rect.Width, p.Width);
+                int h = Math.Min(rect.Height, p.Height);
+                return new System.Drawing.Rectangle(p.Left, p.Top, w, h);
+            }
+            catch { return rect; }
         }
     }
 }
