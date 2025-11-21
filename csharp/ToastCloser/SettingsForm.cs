@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.IO;
 using System.Drawing;
+ 
 
 namespace ToastCloser
 {
@@ -85,20 +86,21 @@ namespace ToastCloser
         }
 
         #region Designer
-        private TextBox txtDisplayLimit = null!;
-        private TextBox txtPollInterval = null!;
-        private TextBox txtLogArchiveLimit = null!;
+        private TextBoxBase txtDisplayLimit = null!;
+        private TextBoxBase txtPollInterval = null!;
+        private TextBoxBase txtLogArchiveLimit = null!;
         private Button btnOpenLogs = null!;
         private CheckBox chkYoutubeOnly = null!;
-        private TextBox txtIdleMS = null!;
-        private TextBox txtMaxMonitorSeconds = null!;
-        private TextBox txtDetectionTimeoutMS = null!;
-        private TextBox txtWinShortcutKeyIntervalMS = null!;
+        private TextBoxBase txtIdleMS = null!;
+        private TextBoxBase txtMaxMonitorSeconds = null!;
+        private TextBoxBase txtDetectionTimeoutMS = null!;
+        private TextBoxBase txtWinShortcutKeyIntervalMS = null!;
         private ComboBox cmbShortcutKeyMode = null!;
         private CheckBox chkDetectOnly = null!;
         private CheckBox chkVerbose = null!;
         private Button btnSave = null!;
         private Button btnCancel = null!;
+        // (kept minimal) no recursion guard — keep logic small to preserve current appearance
 
         private void InitializeComponent()
         {
@@ -141,7 +143,7 @@ namespace ToastCloser
             this.txtPollInterval = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
             this.txtLogArchiveLimit = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
             this.btnOpenLogs = new Button() { Text = "ログフォルダを開く", Width = 200, Height = 30, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleCenter };
-            this.chkYoutubeOnly = new CheckBox() { Text = "YouTube の通知のみを対象にする", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12) };
+            this.chkYoutubeOnly = new CheckBox() { Text = "YouTube の通知のみを対象にする", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(12,12,0,12) };
             this.cmbShortcutKeyMode = new ComboBox() { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2) };
             this.cmbShortcutKeyMode.Items.AddRange(new object[] { "noticecenter", "quicksetting" });
             // Use owner-draw to vertically center the combo text reliably; draw using font metrics and nudge upward
@@ -191,8 +193,8 @@ namespace ToastCloser
             this.txtMaxMonitorSeconds = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
             this.txtDetectionTimeoutMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
             this.txtWinShortcutKeyIntervalMS = new TextBox() { Width = 180, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12), Multiline = true, AcceptsReturn = false, WordWrap = false, BorderStyle = BorderStyle.FixedSingle, Height = 28 };
-            this.chkDetectOnly = new CheckBox() { Text = "検出のみ (DetectOnly)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12) };
-            this.chkVerbose = new CheckBox() { Text = "VerboseLog", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0,12,0,12) };
+            this.chkDetectOnly = new CheckBox() { Text = "検出のみ (DetectOnly)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(12,12,0,12) };
+            this.chkVerbose = new CheckBox() { Text = "VerboseLog", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(12,12,0,12) };
 
             // Buttons
             this.btnSave = new Button() { Text = "保存", Width = 100, Height = 32, TextAlign = ContentAlignment.MiddleCenter, Margin = new Padding(6,8,6,8) };
@@ -231,7 +233,7 @@ namespace ToastCloser
             AdjustTextBoxVertical(this.txtWinShortcutKeyIntervalMS);
 
             // Prevent Enter from inserting newlines (defense-in-depth)
-            Action<TextBox> suppressEnter = tb => tb.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; } };
+            Action<TextBoxBase> suppressEnter = tb => tb.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; } };
             suppressEnter(this.txtDisplayLimit);
             suppressEnter(this.txtPollInterval);
             suppressEnter(this.txtLogArchiveLimit);
@@ -290,13 +292,15 @@ namespace ToastCloser
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, ref RECT lParam);
 
-        private void AdjustTextBoxVertical(TextBox tb)
+        private void AdjustTextBoxVertical(TextBoxBase tb)
         {
             try
             {
                 if (tb == null) return;
+                // TextBoxBase exposes Multiline; AcceptsReturn exists on TextBoxBase as well
                 tb.Multiline = true;
-                tb.AcceptsReturn = false;
+                // AcceptsReturn is declared on TextBox, not TextBoxBase in some frameworks; try-catch
+                try { dynamic d = tb; d.AcceptsReturn = false; } catch { }
                 // Update rect when handle created or resized
                 tb.HandleCreated += (s, e) => UpdateTextBoxRect(tb);
                 tb.SizeChanged += (s, e) => UpdateTextBoxRect(tb);
@@ -309,15 +313,15 @@ namespace ToastCloser
         }
 
         // Small vertical nudge values: TextBox moves down, ComboBox moves up
-        private const int TextBoxVerticalNudge = 2; // pixels down
+        private const int TextBoxVerticalNudge = 4; // pixels down (adjusted for visual test)
         private const int ComboBoxVerticalNudge = 3; // pixels up (tuned to final)
 
-        private void UpdateTextBoxRect(TextBox tb)
+        private void UpdateTextBoxRect(TextBoxBase tb)
         {
+            if (tb == null) return;
             try
             {
                 if (!tb.IsHandleCreated) return;
-                // Use font metrics (ascent/descent) to compute precise text height in pixels
                 using (var g = tb.CreateGraphics())
                 {
                     float dpi = g.DpiY;
@@ -326,18 +330,18 @@ namespace ToastCloser
                     float emHeight = ff.GetEmHeight(style);
                     float cellAscent = ff.GetCellAscent(style);
                     float cellDescent = ff.GetCellDescent(style);
-                    // Font.Size is in points by default; convert to pixels using dpi/72
                     float ascentPx = tb.Font.Size * (cellAscent / emHeight) * (dpi / 72f);
                     float descentPx = tb.Font.Size * (cellDescent / emHeight) * (dpi / 72f);
                     int textH = (int)Math.Round(ascentPx + descentPx);
-                    // center and then nudge downward slightly to better match ComboBox baseline
                     int top = Math.Max(0, (tb.ClientSize.Height - textH) / 2 + TextBoxVerticalNudge);
-                    var rc = new RECT { left = 0, top = top, right = tb.ClientSize.Width, bottom = tb.ClientSize.Height };
+                    var rc = new RECT { left = 0, top = top, right = tb.ClientSize.Width, bottom = Math.Max(top + textH, top + 1) };
                     SendMessage(tb.Handle, EM_SETRECT, IntPtr.Zero, ref rc);
                 }
             }
             catch { }
         }
+
+        // (no logging helper required)
         
         private void ApplySavedWindowGeometry(Config cfg)
         {
