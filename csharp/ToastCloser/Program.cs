@@ -112,6 +112,33 @@ namespace ToastCloser
                         System.IO.File.Move(logPath, dest);
                     }
                     catch { /* safe to ignore rotation failures */ }
+                    // Prune old archived logs if configured
+                    try
+                    {
+                        try
+                        {
+                            int limit = cfg?.LogArchiveLimit ?? 100;
+                            if (limit > 0)
+                            {
+                                var dirInfo = new System.IO.DirectoryInfo(dir);
+                                var pattern = baseName + ".*" + ext; // matches baseName.YYYY-MM-DD-HH-mm-ss.ext
+                                var files = dirInfo.GetFiles()
+                                    .Where(f => System.Text.RegularExpressions.Regex.IsMatch(f.Name, System.Text.RegularExpressions.Regex.Escape(baseName) + @"\..+" + System.Text.RegularExpressions.Regex.Escape(ext) + "$"))
+                                    .OrderBy(f => f.CreationTimeUtc)
+                                    .ToList();
+                                if (files.Count > limit)
+                                {
+                                    int toDelete = files.Count - limit;
+                                    for (int i = 0; i < toDelete; i++)
+                                    {
+                                        try { files[i].Delete(); } catch { }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                    catch { }
                 }
             }
             catch { }

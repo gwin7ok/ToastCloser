@@ -17,6 +17,9 @@ namespace ToastCloser
         public int DetectionTimeoutMS { get; set; } = 2000;
         public int WinShortcutKeyIntervalMS { get; set; } = 300;
         public bool VerboseLog { get; set; } = false;
+        // Maximum number of archived log files to keep. Older files beyond this count are deleted on startup.
+        // Set to 0 to disable pruning.
+        public int LogArchiveLimit { get; set; } = 100;
 
         public static string ConfigFileName => Path.Combine(AppContext.BaseDirectory, "ToastCloser.ini");
 
@@ -36,6 +39,7 @@ namespace ToastCloser
                 lines.Add($"DetectionTimeoutMS={DetectionTimeoutMS}");
                 lines.Add($"WinShortcutKeyIntervalMS={WinShortcutKeyIntervalMS}");
                 lines.Add($"VerboseLog={VerboseLog}");
+                lines.Add($"LogArchiveLimit={LogArchiveLimit}");
                 File.WriteAllLines(ConfigFileName, lines);
             }
             catch { }
@@ -68,6 +72,7 @@ namespace ToastCloser
                         case "DetectionTimeoutMS": int.TryParse(val, out var i3); cfg.DetectionTimeoutMS = i3; break;
                         case "WinShortcutKeyIntervalMS": int.TryParse(val, out var i4); cfg.WinShortcutKeyIntervalMS = i4; break;
                         case "VerboseLog": bool.TryParse(val, out var b3); cfg.VerboseLog = b3; break;
+                        case "LogArchiveLimit": int.TryParse(val, out var la); cfg.LogArchiveLimit = la; break;
                     }
                 }
             }
