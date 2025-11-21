@@ -28,4 +28,26 @@
     <Exec Command="dotnet run -c Release --project ..\..\tools\iconize\iconize.csproj -- &quot;$(ProjectDir)Resources\ToastCloser.png&quot; &quot;$(ProjectDir)Resources\ToastCloser.ico&quot;" IgnoreExitCode="true" />
   </Target>
 
+  <!-- Experimental: enable with -p:EnableBundlingExperiment=true to try forcing native runtimepack assets into single-file bundle -->
+  <PropertyGroup Condition="'$(EnableBundlingExperiment)' == 'true'">
+    <!-- Try to include native libraries/content for self-extract (diagnostic/experimental) -->
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Disable single-file compression to make bundling behavior clearer during tests -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <!-- Emit verbose publish info for diagnostics when experiment enabled -->
+    <PublishReadyToRun>false</PublishReadyToRun>
+  </PropertyGroup>
+
+  <!-- Permanent: when publishing Release single-file, prefer to include native runtimepack assets
+       into the single-file bundle. This attempts to bundle native runtime libraries so the
+       publish output is a single EXE. Keep this scoped to Release+PublishSingleFile to avoid
+       slowing Debug builds. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(PublishSingleFile)' == 'true'">
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Enable compression for the final artifact to reduce size in normal releases -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
 </Project>
