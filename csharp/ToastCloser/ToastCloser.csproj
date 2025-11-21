@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <StartupObject>ToastCloser.TrayBootstrap</StartupObject>
+    <ApplicationIcon>Resources\ToastCloser.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,12 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Resources\ToastCloser.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\ToastCloser.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <!-- Do not copy Resources to output; ICO is embedded as resource and ApplicationIcon is set -->
+    <None Include="Resources\ToastCloser.png" />
+    <None Include="Resources\ToastCloser.ico" />
+    <!-- Also embed the ICO so single-file/published exes can load it from the assembly -->
+    <EmbeddedResource Include="Resources\ToastCloser.ico" />
   </ItemGroup>
 
   <Target Name="GenerateToastCloserIco" BeforeTargets="BeforeBuild">

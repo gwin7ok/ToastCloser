@@ -26,8 +26,43 @@ namespace ToastCloser
             try
             {
                 Program.Logger.Instance?.Info($"Tray icon candidates: ico='{iconPath}', icoRes='{iconPathResources}', png='{pngPath}', pngRes='{pngPathResources}'");
-                // Prefer a provided ICO (preserves proper alpha) if present in either location
-                if (File.Exists(iconPath) || File.Exists(iconPathResources))
+                // First, try to load ICO embedded as an assembly resource (works for single-file publish)
+                try
+                {
+                    var asm = typeof(TrayApplicationContext).Assembly;
+                    var resNames = asm.GetManifestResourceNames();
+                    Program.Logger.Instance?.Info("Assembly manifest resources: " + string.Join(",", resNames));
+                    string? match = null;
+                    foreach (var rn in resNames)
+                    {
+                        if (rn.EndsWith("ToastCloser.ico", StringComparison.OrdinalIgnoreCase)) { match = rn; break; }
+                    }
+                    if (match != null)
+                    {
+                        Program.Logger.Instance?.Info($"Loading ICO from embedded resource: {match}");
+                        using (var s = asm.GetManifestResourceStream(match))
+                        {
+                            if (s != null)
+                            {
+                                try
+                                {
+                                    icon = new Icon(s);
+                                    Program.Logger.Instance?.Info("Loaded ICO from resource successfully");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Program.Logger.Instance?.Error("Failed to load ICO from resource: " + ex.Message);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Program.Logger.Instance?.Error("Embedded resource ICO load error: " + ex.Message);
+                }
+                // If not loaded from resource, prefer a provided ICO file (preserves proper alpha) if present in either location
+                if (icon == SystemIcons.Application && (File.Exists(iconPath) || File.Exists(iconPathResources)))
                 {
                     var realIco = File.Exists(iconPath) ? iconPath : iconPathResources;
                     Program.Logger.Instance?.Info($"Loading ICO from: {realIco}");
