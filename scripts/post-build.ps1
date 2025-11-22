@@ -30,13 +30,13 @@ if (-not $version) { $version = "0.0.0" }
 Write-Host "Determined version: $version"
 
 # Locate publish folder: try several candidate locations used by CI and local dev
-$cwd = $PWD
+$cwd = $PWD.Path
 $projectDir = Split-Path -Parent $ProjectPath
 $candidates = @(
-    Join-Path $cwd "publish\ToastCloser\win-x64",
-    Join-Path $cwd "artifacts\win-x64",
-    Join-Path $projectDir "bin\$Configuration\net8.0-windows\publish",
-    Join-Path $cwd "publish"
+    Join-Path $cwd 'publish\ToastCloser\win-x64'
+    Join-Path $cwd 'artifacts\win-x64'
+    Join-Path $projectDir "bin\$Configuration\net8.0-windows\publish"
+    Join-Path $cwd 'publish'
 )
 
 $publishDir = $null
