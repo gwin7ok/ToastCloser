@@ -1,7 +1,5 @@
 {
   "terminal.integrated.env.windows": {
-    "DOTNET_CLI_UI_LANGUAGE": "ja",
-    "LANG": "ja_JP.UTF-8"
-  },
-  "files.encoding": "utf8"
+    "DOTNET_CLI_UI_LANGUAGE": "ja"
+  }
 }
