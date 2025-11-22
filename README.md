@@ -1,5 +1,63 @@
 # noticeWindowFinder (Chrome YouTube 通知自動閉鎖)
 
+## 概要
+
+- **リポジトリ**: `noticeWindowFinder`
+- **目的**: Windows 上で表示される通知（トースト）を検出し、YouTube 関連の通知を自動で処理するデスクトップユーティリティ `ToastCloser` を含みます。
+
+## 主要技術
+
+- 言語/ランタイム: C# / .NET 8 (`net8.0-windows`)
+- UI 自動化: `FlaUI` を利用
+
+## 簡単な使い方
+
+- 配布版（推奨）: GitHub Releases から配布されているアーカイブをダウンロードして解凍し、含まれる `ToastCloser.exe` を実行してください。
+
+  例:
+
+  1. Releases: https://github.com/gwin7ok/noticeWindowFinder/releases
+  2. 最新の `ToastCloser_*_win-x64.zip` をダウンロードして解凍。
+  3. 解凍フォルダ内の `ToastCloser.exe` をダブルクリックして起動。
+
+  - 短い注意: `ToastCloser` はデスクトップ上の通知 UI を操作するため、同一ユーザーのデスクトップセッションで実行してください。必要に応じて管理者権限で実行してください。
+
+## ローカルでビルド（開発者向け）
+
+1. .NET 8 SDK を用意します。
+2. ルートで次を実行:
+
+```powershell
+dotnet build .\csharp\ToastCloser\ToastCloser.csproj -c Debug
+dotnet run --project .\csharp\ToastCloser\ToastCloser.csproj --configuration Debug
+```
+
+注: `Resources/ToastCloser.ico` が必要です。リポジトリの PNG から ICO を生成するには:
+
+```powershell
+pwsh -File .\scripts\generate-ico.ps1
+```
+
+## リリースとリリースノート
+
+- 更新履歴は `CHANGELOG.md` を参照してください。CI は `CHANGELOG.md` からリリース本文を生成して `gh release` に渡す運用になっています。
+
+## 開発用スクリプト
+
+- アイコン生成: `scripts/generate-ico.ps1`
+- リリース本文生成: `scripts/generate-release-body.ps1`
+- パッケージング: `scripts/post-build.ps1`
+- リリース作成補助: `scripts/release-and-publish.ps1`
+
+## 貢献 / ライセンス
+
+- このリポジトリは個人用ユーティリティです。変更を提案する場合は PR を送ってください。
+
+---
+
+README を簡潔化しました。配布された ZIP を解凍して `ToastCloser.exe` を実行するだけで利用可能です。
+# noticeWindowFinder (Chrome YouTube 通知自動閉鎖)
+
 ## Overview
 
 - **リポジトリ**: `noticeWindowFinder`
@@ -87,6 +145,40 @@ pwsh -File .\scripts\generate-release-body.ps1 -OutFile release-body.md
 # 生成した `release-body.md` を使って gh CLI でリリースを作成する例:
 gh release create <tag> --title <tag> --notes-file release-body.md --repo <owner>/<repo>
 ```
+
+## インストール（リリースを使う）
+
+リリースページにアップロードされている `ToastCloser` のアーカイブ（例: `ToastCloser_vX.Y.Z_win-x64.zip`）をダウンロードして解凍し、その中の実行ファイルを実行するだけで利用できます。手順の例をいくつか示します。
+  - GitHub の [Releases](https://github.com/gwin7ok/noticeWindowFinder/releases) ページに移動し、最新の `ToastCloser_*_win-x64.zip` をダウンロードします。ZIP を右クリックして「すべて展開」などで解凍し、中の `ToastCloser.exe` をダブルクリックして起動します。
+
+- PowerShell + `gh` (CLI) を使う例
+
+```powershell
+# リポジトリの latest リリースから該当アセットをダウンロードし、解凍して実行する
+gh release download --repo gwin7ok/noticeWindowFinder --pattern "ToastCloser_*_win-x64.zip" --dir . --clobber
+$zip = Get-ChildItem -Filter "ToastCloser_*_win-x64.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+ダウンロードして解凍し、含まれる `ToastCloser.exe` を実行してください。
+
+例:
+
+1. ブラウザで GitHub Releases（https://github.com/gwin7ok/noticeWindowFinder/releases）にアクセスし、最新の `ToastCloser_*_win-x64.zip` をダウンロードして解凍。
+2. 解凍フォルダ内の `ToastCloser.exe` をダブルクリックして起動。
+
+短い注意:
+
+- `ToastCloser` はデスクトップ上の通知 UI を操作するため、同一ユーザーのデスクトップセッションで実行してください。
+- 必要に応じて管理者権限で実行してください。
+- 注意点
+
+  - `ToastCloser` は Windows デスクトップの通知 UI を操作するため、同一ユーザーのデスクトップセッションで実行してください（サービスや別ユーザーのセッションでは動作しません）。
+
+  - 必要に応じて管理者権限で実行してください（操作対象のウィンドウや権限に依存します）。
+
+  - 設定は実行ディレクトリの `ToastCloser.ini` で変更できます。ログはそのディレクトリの `logs/` に出力されます。
+
+  - セキュリティ上の理由から、ダウンロードしたアーカイブは信頼できるソースのみを使用してください。
+
 
 ## 貢献 / ライセンス
 
