@@ -23,10 +23,9 @@
     <EmbeddedResource Include="Resources\ToastCloser.ico" />
   </ItemGroup>
 
-  <Target Name="GenerateToastCloserIco" BeforeTargets="BeforeBuild">
-    <!-- Generate ToastCloser.ico from PNG if PNG exists -->
-    <Exec Command="dotnet run -c Release --project ..\..\tools\iconize\iconize.csproj -- &quot;$(ProjectDir)Resources\ToastCloser.png&quot; &quot;$(ProjectDir)Resources\ToastCloser.ico&quot;" IgnoreExitCode="true" />
-  </Target>
+  <!-- Icon generation is handled outside the build process.
+       Run `scripts/generate-ico.ps1` to create `Resources\ToastCloser.ico` from `Resources\ToastCloser.png`.
+       The build assumes the ICO is already present. -->
 
   <!-- Experimental: enable with -p:EnableBundlingExperiment=true to try forcing native runtimepack assets into single-file bundle -->
   <PropertyGroup Condition="'$(EnableBundlingExperiment)' == 'true'">

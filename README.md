@@ -29,6 +29,13 @@ dotnet build .\csharp\ToastCloser\ToastCloser.csproj -c Debug
 dotnet run --project .\csharp\ToastCloser\ToastCloser.csproj --configuration Debug
 ```
 
+注意: ビルドは `Resources/ToastCloser.ico` が既に存在することを前提としています。リポジトリ付属の PNG から ICO を生成するには次のスクリプトを事前に実行してください:
+
+```powershell
+# リポジトリルートから実行
+pwsh -File .\scripts\generate-ico.ps1
+```
+
 1. 設定をファイルで変更する場合は、実行後に生成される `ToastCloser.ini` を編集してください。
 
 ## トレイ（GUI）で常駐させる
