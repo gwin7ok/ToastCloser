@@ -104,7 +104,7 @@ if (-not $DryRun) {
                 # Pipe the token into gh auth login --with-token for non-interactive login
                 $env:GITHUB_TOKEN | gh auth login --with-token 2>$null
             } catch {
-                Write-Host "gh auth login failed: $_"
+                Write-Host "gh auth login failed:" $_
             }
         }
 
@@ -131,39 +131,39 @@ if (-not $DryRun) {
                     pwsh -NoProfile -File .\scripts\generate-release-body.ps1 -Tag $tag -OutFile $notesFile 2>$null
                     if (-not (Test-Path $notesFile)) { $notesFile = $null }
                 } catch {
-                    Write-Host "generate-release-body failed: $_"
+                    Write-Host "generate-release-body failed:" $_
                     $notesFile = $null
                 }
             }
 
             # If release exists, delete the existing release and remote tag, then create a fresh one.
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "Release for tag $tag already exists. Deleting existing release and remote tag to recreate."
-                try {
-                    gh release delete $tag --repo "$RepoOwner/$RepoName" --yes > $null 2>&1
-                    Write-Host "Deleted GitHub Release for tag $tag"
-                } catch {
-                    Write-Host "Warning: failed to delete GitHub Release for $tag: $_"
-                }
-
-                # Attempt to delete remote tag
-                try {
-                    git push origin --delete $tag > $null 2>&1
-                    Write-Host "Deleted remote tag origin/$tag"
-                } catch {
-                    Write-Host "Warning: failed to delete remote tag origin/$tag: $_"
-                }
-
-                # Delete local tag if present
-                try {
-                    if (git rev-parse -q --verify "refs/tags/$tag") {
-                        git tag -d $tag > $null 2>&1
-                        Write-Host "Deleted local tag $tag"
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "Release for tag $tag already exists. Deleting existing release and remote tag to recreate."
+                    try {
+                        gh release delete $tag --repo "$RepoOwner/$RepoName" --yes > $null 2>&1
+                        Write-Host "Deleted GitHub Release for tag $tag"
+                    } catch {
+                        Write-Host ("Warning: failed to delete GitHub Release for {0}: {1}" -f $tag, $_)
                     }
-                } catch {
-                    # ignore
+
+                    # Attempt to delete remote tag
+                    try {
+                        git push origin --delete $tag > $null 2>&1
+                        Write-Host "Deleted remote tag origin/$tag"
+                    } catch {
+                        Write-Host ("Warning: failed to delete remote tag origin/{0}: {1}" -f $tag, $_)
+                    }
+
+                    # Delete local tag if present
+                    try {
+                        if (git rev-parse -q --verify "refs/tags/$tag") {
+                            git tag -d $tag > $null 2>&1
+                            Write-Host "Deleted local tag $tag"
+                        }
+                    } catch {
+                        # ignore
+                    }
                 }
-            }
 
             # Create a new release (notesFile may be null)
             Write-Host "Creating release $tag"
