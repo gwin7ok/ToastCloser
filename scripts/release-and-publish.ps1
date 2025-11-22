@@ -72,14 +72,20 @@ if (-not $DryRun) {
             gh release view $tag --repo "$RepoOwner/$RepoName" > $null 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "Release for tag $tag not found; creating release..."
-                # Try to generate a release body from CHANGELOG.md
-                $notesFile = Join-Path $PWD ("release-notes-$tag.md")
-                try {
-                    pwsh -NoProfile -File .\scripts\generate-release-body.ps1 -Tag $tag -OutFile $notesFile 2>$null
-                    if (-not (Test-Path $notesFile)) { $notesFile = '' }
-                } catch {
-                    Write-Host "generate-release-body failed: $_"
-                    $notesFile = ''
+
+                # Determine notes file: prefer RELEASE_NOTES_FILE env (set by CI), otherwise generate from CHANGELOG.md
+                $notesFile = $null
+                if ($env:RELEASE_NOTES_FILE -and (Test-Path $env:RELEASE_NOTES_FILE)) {
+                    $notesFile = (Resolve-Path $env:RELEASE_NOTES_FILE).Path
+                } else {
+                    $notesFile = Join-Path $PWD ("release-notes-$tag.md")
+                    try {
+                        pwsh -NoProfile -File .\scripts\generate-release-body.ps1 -Tag $tag -OutFile $notesFile 2>$null
+                        if (-not (Test-Path $notesFile)) { $notesFile = $null }
+                    } catch {
+                        Write-Host "generate-release-body failed: $_"
+                        $notesFile = $null
+                    }
                 }
 
                 if ($notesFile) {
