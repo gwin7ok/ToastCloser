@@ -41,7 +41,11 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
+          if (Test-Path requirements.txt) {
+            pip install -r requirements.txt || Write-Host "requirements install failed but continuing"
+          } else {
+            Write-Host "No requirements.txt found in repo root; skipping Python requirements installation"
+          }
 
       - name: Run post-build script (PowerShell)
         shell: pwsh

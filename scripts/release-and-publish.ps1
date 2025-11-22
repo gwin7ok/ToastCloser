@@ -136,21 +136,56 @@ if (-not $DryRun) {
                 }
             }
 
-            # If release does not exist, create. If exists, edit notes to overwrite.
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "Release for tag $tag not found; creating release..."
-                if ($notesFile) {
-                    gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes-file $notesFile > $null 2>&1
-                } else {
-                    gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes "" > $null 2>&1
+            # If release exists, delete the existing release and remote tag, then create a fresh one.
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Release for tag $tag already exists. Deleting existing release and remote tag to recreate."
+                try {
+                    gh release delete $tag --repo "$RepoOwner/$RepoName" --yes > $null 2>&1
+                    Write-Host "Deleted GitHub Release for tag $tag"
+                } catch {
+                    Write-Host "Warning: failed to delete GitHub Release for $tag: $_"
                 }
+
+                # Attempt to delete remote tag
+                try {
+                    git push origin --delete $tag > $null 2>&1
+                    Write-Host "Deleted remote tag origin/$tag"
+                } catch {
+                    Write-Host "Warning: failed to delete remote tag origin/$tag: $_"
+                }
+
+                # Delete local tag if present
+                try {
+                    if (git rev-parse -q --verify "refs/tags/$tag") {
+                        git tag -d $tag > $null 2>&1
+                        Write-Host "Deleted local tag $tag"
+                    }
+                } catch {
+                    # ignore
+                }
+            }
+
+            # Create a new release (notesFile may be null)
+            Write-Host "Creating release $tag"
+            if ($notesFile) {
+                gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes-file $notesFile > $null 2>&1
             } else {
-                Write-Host "Release for tag $tag already exists; updating release notes (overwrite)..."
-                if ($notesFile) {
-                    gh release edit $tag --repo "$RepoOwner/$RepoName" --notes-file $notesFile > $null 2>&1
-                } else {
-                    gh release edit $tag --repo "$RepoOwner/$RepoName" --notes "" > $null 2>&1
+                gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes "" > $null 2>&1
+            }
+
+            # Ensure the created release is published (not Draft). Use gh to query then API to set draft=false if necessary.
+            try {
+                $relJson = gh release view $tag --repo "$RepoOwner/$RepoName" --json id,draft 2>$null
+                if ($relJson) {
+                    $rel = $relJson | ConvertFrom-Json
+                    if ($rel.draft -eq $true) {
+                        Write-Host "Release $tag is currently Draft; publishing it."
+                        gh api -X PATCH "/repos/$RepoOwner/$RepoName/releases/$($rel.id)" -f draft=false > $null 2>&1
+                        Write-Host "Published release $tag (draft -> false)"
+                    }
                 }
+            } catch {
+                Write-Host "Could not verify/publish release via gh API: $_"
             }
 
             # Upload asset, overwriting existing asset with same name
