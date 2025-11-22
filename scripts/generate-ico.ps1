@@ -20,18 +20,25 @@ try {
     Write-Output "Generating ICO from: $png -> $ico"
 
     $iconizeProj = Join-Path $repoRoot 'tools\iconize\iconize.csproj'
-    if (-not (Test-Path $iconizeProj)) {
-        Write-Error "iconize project not found: $iconizeProj"
-        exit 3
+    $builtDll = Join-Path $repoRoot 'tools\iconize\bin\Release\net8.0-windows\iconize.dll'
+
+    if (Test-Path $builtDll) {
+        Write-Output "Using built DLL: $builtDll"
+        & dotnet $builtDll $png $ico
+        $rc = $LASTEXITCODE
     }
-
-    $cmd = @(
-        'run', '-c', 'Release', '--project', $iconizeProj, '--', $png, $ico
-    )
-
-    # Use dotnet and propagate exit code
-    & dotnet @cmd
-    $rc = $LASTEXITCODE
+    else {
+        if (-not (Test-Path $iconizeProj)) {
+            Write-Error "iconize project not found: $iconizeProj"
+            exit 3
+        }
+        $cmd = @(
+            'run', '-c', 'Release', '--project', $iconizeProj, '--', $png, $ico
+        )
+        # Fallback to dotnet run (slower, but works when no build output exists)
+        & dotnet @cmd
+        $rc = $LASTEXITCODE
+    }
     if ($rc -ne 0) {
         Write-Error "iconize failed with exit code $rc"
         exit $rc
