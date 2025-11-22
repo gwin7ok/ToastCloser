@@ -2,7 +2,8 @@ param(
     [switch]$DryRun = $false,
     [switch]$SkipBuild = $false,
     [string]$RepoOwner = '',
-    [string]$RepoName = ''
+    [string]$RepoName = '',
+    [switch]$AllowLocalBuild = $false
 )
 
 Write-Host "release-and-publish.ps1: DryRun=$DryRun SkipBuild=$SkipBuild RepoOwner=$RepoOwner RepoName=$RepoName"
@@ -23,6 +24,19 @@ if (-not $RepoOwner -or -not $RepoName) {
 
 Write-Host "Using RepoOwner=$RepoOwner RepoName=$RepoName"
 
+# Determine whether we're running in CI (GitHub Actions)
+$isCI = $false
+if ($env:GITHUB_ACTIONS -and $env:GITHUB_ACTIONS -eq 'true') { $isCI = $true }
+
+# If not in CI and local builds are not explicitly allowed, skip building and zip creation
+if (-not $isCI -and -not $AllowLocalBuild) {
+    Write-Host "Local run detected and local builds are not allowed. Skipping build and archive generation by default."
+    $SkipBuild = $true
+    $skipPostBuild = $true
+} else {
+    $skipPostBuild = $false
+}
+
 if (-not $SkipBuild) {
     Write-Host "Building and publishing..."
     dotnet restore "csharp\ToastCloser\ToastCloser.csproj"
@@ -36,6 +50,15 @@ if ($DryRun) {
     Write-Host "Dry run: would call post-build packaging with version from tag or csproj"
     Write-Host "Example command: pwsh .\scripts\post-build.ps1 -ProjectPath 'csharp\\ToastCloser\\ToastCloser.csproj' -ArtifactPrefix 'ToastCloser'"
 } else {
+    if ($skipPostBuild) {
+        Write-Host "Skipping post-build (archive generation) because this is a local run and local builds are not allowed."
+        # Locate any pre-existing zip artifacts in repository if present
+        $zipPattern = "${PWD}\ToastCloser_*.zip"
+        $zips = Get-ChildItem -Path $zipPattern -ErrorAction SilentlyContinue
+        if (-not $zips) {
+            Write-Host "No artifact zip found in repository. To enable building locally pass -AllowLocalBuild to this script or create the archive manually."
+        }
+    } else {
     # Determine tag (if available) to pass to post-build so the archive name includes the correct version
     $tagForBuild = $env:GITHUB_REF_NAME
     if (-not $tagForBuild -and $env:GITHUB_REF -match 'refs/tags/(.+)') { $tagForBuild = $matches[1] }
@@ -65,6 +88,7 @@ if ($DryRun) {
         # fallback to locating zips under PWD
         $zipPattern = "${PWD}\ToastCloser_*.zip"
         $zips = Get-ChildItem -Path $zipPattern -ErrorAction SilentlyContinue
+    }
     }
 }
 
