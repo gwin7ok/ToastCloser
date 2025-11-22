@@ -56,7 +56,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
-          path: artifacts/**
+          path: |
+            publish/**
+            ToastCloser_*.zip
 
       - name: Create GitHub Release and publish
         env:
