@@ -37,11 +37,6 @@ dotnet run --project .\csharp\ToastCloser\ToastCloser.csproj --configuration Deb
 ```powershell
 pwsh -File .\scripts\generate-ico.ps1
 ```
-
-## リリースとリリースノート
-
-- 更新履歴は `CHANGELOG.md` を参照してください。CI は `CHANGELOG.md` からリリース本文を生成して `gh release` に渡す運用になっています。
-
 ## 開発用スクリプト
 
 - アイコン生成: `scripts/generate-ico.ps1`
@@ -49,13 +44,6 @@ pwsh -File .\scripts\generate-ico.ps1
 - パッケージング: `scripts/post-build.ps1`
 - リリース作成補助: `scripts/release-and-publish.ps1`
 
-## 貢献 / ライセンス
-
-- このリポジトリは個人用ユーティリティです。変更を提案する場合は PR を送ってください。
-
----
-
-README を簡潔化しました。配布された ZIP を解凍して `ToastCloser.exe` を実行するだけで利用可能です。
 # noticeWindowFinder (Chrome YouTube 通知自動閉鎖)
 
 ## Overview
@@ -100,15 +88,6 @@ pwsh -File .\scripts\generate-ico.ps1
 
 - `ToastCloser` はトレイアプリとして動作します。通常は単独実行でトレイアイコンが表示され、設定ウィンドウやログ出力を利用できます。
 
-## リリース用単一実行ファイル（Windows x64）
-
-ワークスペースに VS Code タスクが用意されています（例: `Publish: (Release win-x64 single-file)`）。手動で行う場合:
-
-```powershell
-dotnet publish .\csharp\ToastCloser\ToastCloser.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o .\publish\ToastCloser\win-x64
-```
-
-注: `ToastCloser.csproj` はアイコン生成や実験的バンドルパラメータを含んでいます。単一ファイル化は実験的なネイティブ依存取り込みに影響するため、必要に応じて `csproj` の条件を確認してください。
 
 ## 設定項目（主なもの）
 
@@ -135,15 +114,8 @@ dotnet publish .\csharp\ToastCloser\ToastCloser.csproj -c Release -r win-x64 --s
 
 ## 更新履歴 (Changelog)
 
-- このリポジトリの更新履歴は `CHANGELOG.md` にまとめています。README 内で長く履歴を載せず、リリースノートはそちらを参照してください。
-- リリースページ用の説明文は `CHANGELOG.md` から生成できます。ローカルで最新リリースの説明を作るには次のスクリプトを使います:
+- このリポジトリの更新履歴は `CHANGELOG.md` にまとめています。
 
-```powershell
-# 例: 最新タグのセクションを `release-body.md` に書き出す
-pwsh -File .\scripts\generate-release-body.ps1 -OutFile release-body.md
-
-# 生成した `release-body.md` を使って gh CLI でリリースを作成する例:
-gh release create <tag> --title <tag> --notes-file release-body.md --repo <owner>/<repo>
 ```
 
 ## インストール（リリースを使う）
@@ -151,19 +123,6 @@ gh release create <tag> --title <tag> --notes-file release-body.md --repo <owner
 リリースページにアップロードされている `ToastCloser` のアーカイブ（例: `ToastCloser_vX.Y.Z_win-x64.zip`）をダウンロードして解凍し、その中の実行ファイルを実行するだけで利用できます。手順の例をいくつか示します。
   - GitHub の [Releases](https://github.com/gwin7ok/noticeWindowFinder/releases) ページに移動し、最新の `ToastCloser_*_win-x64.zip` をダウンロードします。ZIP を右クリックして「すべて展開」などで解凍し、中の `ToastCloser.exe` をダブルクリックして起動します。
 
-- PowerShell + `gh` (CLI) を使う例
-
-```powershell
-# リポジトリの latest リリースから該当アセットをダウンロードし、解凍して実行する
-gh release download --repo gwin7ok/noticeWindowFinder --pattern "ToastCloser_*_win-x64.zip" --dir . --clobber
-$zip = Get-ChildItem -Filter "ToastCloser_*_win-x64.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-
-ダウンロードして解凍し、含まれる `ToastCloser.exe` を実行してください。
-
-例:
-
-1. ブラウザで GitHub Releases（https://github.com/gwin7ok/noticeWindowFinder/releases）にアクセスし、最新の `ToastCloser_*_win-x64.zip` をダウンロードして解凍。
-2. 解凍フォルダ内の `ToastCloser.exe` をダブルクリックして起動。
 
 短い注意:
 
