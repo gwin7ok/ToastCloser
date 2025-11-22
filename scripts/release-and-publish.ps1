@@ -72,7 +72,21 @@ if (-not $DryRun) {
             gh release view $tag --repo "$RepoOwner/$RepoName" > $null 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "Release for tag $tag not found; creating release..."
-                gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes "" > $null 2>&1
+                # Try to generate a release body from CHANGELOG.md
+                $notesFile = Join-Path $PWD ("release-notes-$tag.md")
+                try {
+                    pwsh -NoProfile -File .\scripts\generate-release-body.ps1 -Tag $tag -OutFile $notesFile 2>$null
+                    if (-not (Test-Path $notesFile)) { $notesFile = '' }
+                } catch {
+                    Write-Host "generate-release-body failed: $_"
+                    $notesFile = ''
+                }
+
+                if ($notesFile) {
+                    gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes-file $notesFile > $null 2>&1
+                } else {
+                    gh release create $tag --repo "$RepoOwner/$RepoName" --title $tag --notes "" > $null 2>&1
+                }
             }
 
             gh release upload $tag $($z.FullName) --repo "$RepoOwner/$RepoName" --clobber

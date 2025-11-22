@@ -75,6 +75,19 @@ dotnet publish .\csharp\ToastCloser\ToastCloser.csproj -c Release -r win-x64 --s
 - `tools/` ディレクトリに小さな補助ツール（アイコン生成やテスト用実行）が置かれています。
 - VS Code のタスク (`.vscode/tasks.json`) にビルド / publish / 実行用のエントリが用意されています。タスク名: `dotnet: build ToastCloser`, `Publish: (Release win-x64 single-file)` など。
 
+## 更新履歴 (Changelog)
+
+- このリポジトリの更新履歴は `CHANGELOG.md` にまとめています。README 内で長く履歴を載せず、リリースノートはそちらを参照してください。
+- リリースページ用の説明文は `CHANGELOG.md` から生成できます。ローカルで最新リリースの説明を作るには次のスクリプトを使います:
+
+```powershell
+# 例: 最新タグのセクションを `release-body.md` に書き出す
+pwsh -File .\scripts\generate-release-body.ps1 -OutFile release-body.md
+
+# 生成した `release-body.md` を使って gh CLI でリリースを作成する例:
+gh release create <tag> --title <tag> --notes-file release-body.md --repo <owner>/<repo>
+```
+
 ## 貢献 / ライセンス
 
 - このリポジトリは個人的なユーティリティを収めています。変更を加える場合はコードの動作を理解した上でプルリクエストを送ってください。
