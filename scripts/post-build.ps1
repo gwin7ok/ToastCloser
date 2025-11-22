@@ -3,7 +3,7 @@ param(
     [string]$ArtifactPrefix = "ToastCloser",
     [string]$Configuration = "Release",
     [switch]$SkipZip = $false,
-    [string]$Version = '',
+    [string]$ReleaseVersion = '',
     [switch]$UseTempDir = $false
 )
 
@@ -24,7 +24,7 @@ function Get-VersionFromCsProj($csproj)
 }
 
 $version = $null
-if ($Version -and $Version.Trim() -ne '') { $version = $Version }
+if ($ReleaseVersion -and $ReleaseVersion.Trim() -ne '') { $version = $ReleaseVersion }
 if (-not $version) { $version = Get-VersionFromCsProj $ProjectPath }
 if (-not $version) { $version = $env:GITHUB_REF_NAME }
 if (-not $version) { $version = "0.0.0" }

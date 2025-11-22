@@ -44,7 +44,7 @@ if ($DryRun) {
     if ($env:GITHUB_ACTIONS -and $env:GITHUB_ACTIONS -eq 'true') { $useTemp = $true }
 
     $pbArgs = "-ProjectPath 'csharp\ToastCloser\ToastCloser.csproj' -ArtifactPrefix 'ToastCloser'"
-    if ($tagForBuild) { $pbArgs += " -Version '$tagForBuild'" }
+    if ($tagForBuild) { $pbArgs += " -ReleaseVersion '$tagForBuild'" }
     if ($useTemp) { $pbArgs += ' -UseTempDir' }
 
     Write-Host "Calling post-build with: $pbArgs"
