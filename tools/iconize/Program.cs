@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 // iconize: simple PNG -> multi-size ICO generator with transparency heuristics
-using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
