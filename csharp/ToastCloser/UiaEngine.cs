@@ -49,6 +49,7 @@ namespace ToastCloser
             try { NativeMethods.GetCursorPos(out Program._lastCursorPos); } catch { }
 
             // Local copy of config flags used inside the loop
+            var localCfg = cfg ?? new Config();
             bool _monitoringStarted = false;
 
             while (true)
@@ -252,7 +253,7 @@ namespace ToastCloser
                                 if (scroll != null)
                                 {
                                     logger?.Debug($"Enumerating FlexibleToastView under ScrollViewer (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
-                                    var toasts = scroll.FindAllDescendants(cf.ByClassName("FlexibleToastView"));
+                                    var toasts = scroll.FindAllDescendants(localCf.ByClassName("FlexibleToastView"));
                                     logger?.Debug($"FlexibleToastView count={(toasts?.Length ?? 0)} (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
 
                                     if (toasts != null && toasts.Length > 0)
@@ -271,7 +272,7 @@ namespace ToastCloser
                                                     logger?.Debug($"Attribution.Name=\"{attr}\" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                                                     if (!string.IsNullOrEmpty(attr))
                                                     {
-                                                        if (cfg?.YoutubeOnly ?? true)
+                                                        if (localCfg.YoutubeOnly)
                                                         {
                                                             if (string.Equals(attr.Trim(), "www.youtube.com", StringComparison.OrdinalIgnoreCase))
                                                             {
@@ -342,6 +343,8 @@ namespace ToastCloser
                     }
 
                     FlaUI.Core.AutomationElements.AutomationElement[] found = foundList.ToArray();
+                    // Ensure we have a non-null ConditionFactory for downstream usage to avoid null dereferences
+                    var cfSafe = cf ?? new ConditionFactory(new UIA3PropertyLibrary());
                     if (found == null || found.Length == 0)
                     {
                         // No toasts found by CoreWindow-based search; end scan
@@ -382,7 +385,7 @@ namespace ToastCloser
                             string contentDisplay = string.Empty;
                             try
                             {
-                                var textNodes = w.FindAllDescendants(cf.ByControlType(ControlType.Text));
+                                var textNodes = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text));
                                 var parts = new List<string>();
                                 foreach (var tn in textNodes)
                                 {
@@ -435,7 +438,7 @@ namespace ToastCloser
                                 int textCount = 0;
                                 try
                                 {
-                                    var tnodes = w.FindAllDescendants(cf.ByControlType(ControlType.Text));
+                                    var tnodes = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text));
                                     textCount = tnodes?.Length ?? 0;
                                 }
                                 catch { }
@@ -472,7 +475,7 @@ namespace ToastCloser
 
                         try
                         {
-                            var textNodesEx = w.FindAllDescendants(cf.ByControlType(ControlType.Text));
+                            var textNodesEx = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text));
                             var partsEx = new System.Collections.Generic.List<string>();
                             foreach (var tn in textNodesEx)
                             {
@@ -721,11 +724,11 @@ namespace ToastCloser
                                             logger?.Info($"key={key} Diagnostics: class={className} aid={aid} nativeHandle=0x{nativeHwnd.ToInt64():X} pid={pid} rid={rid} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
 
                                             int textCount = 0;
-                                            try { var tnodes = w.FindAllDescendants(cf.ByControlType(ControlType.Text)); textCount = tnodes?.Length ?? 0; } catch { }
+                                            try { var tnodes = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text)); textCount = tnodes?.Length ?? 0; } catch { }
                                             logger?.Info($"key={key} Diagnostics: textNodeCount={textCount}");
 
                                             bool hasCloseBtn = false;
-                                            try { var btnCond = cf.ByControlType(ControlType.Button).And(cf.ByName("閉じる").Or(cf.ByName("Close"))); var btn = w.FindFirstDescendant(btnCond); hasCloseBtn = btn != null; } catch { }
+                                            try { var btnCond = cfSafe.ByControlType(ControlType.Button).And(cfSafe.ByName("閉じる").Or(cfSafe.ByName("Close"))); var btn = w.FindFirstDescendant(btnCond); hasCloseBtn = btn != null; } catch { }
                                             logger?.Info($"key={key} Diagnostics: hasCloseButton={hasCloseBtn}");
 
                                             try
