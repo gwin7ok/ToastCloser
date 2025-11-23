@@ -16,6 +16,7 @@ namespace ToastCloser
     class Program
     {
         // track last real user input from keyboard/mouse (Environment.TickCount)
+        private static System.Threading.Mutex? _singleInstanceMutex = null;
         private static uint _lastKeyboardTick = 0;
         private static uint _lastMouseTick = 0;
         private static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0,0);
@@ -36,7 +37,7 @@ namespace ToastCloser
                 {
                     bool createdNew = false;
                     var mutexName = "Global\\ToastCloser_mutex";
-                    var single = new System.Threading.Mutex(true, mutexName, out createdNew);
+                    _singleInstanceMutex = new System.Threading.Mutex(true, mutexName, out createdNew);
                     if (!createdNew)
                     {
                         try
