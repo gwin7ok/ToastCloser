@@ -1,10 +1,10 @@
 Param()
 $root = 'G:\\Cursor_Folder'
 Set-Location -LiteralPath $root
-$filtered = Join-Path $root 'noticeWindowFinder-filtered'
+$filtered = Join-Path $root 'ToastCloser-filtered'
 if (Test-Path $filtered) { Remove-Item -LiteralPath $filtered -Recurse -Force }
 Write-Output 'Cloning mirror into non-bare filtered clone...'
-git clone .\noticeWindowFinder-mirror.git .\noticeWindowFinder-filtered
+git clone .\ToastCloser-mirror.git .\ToastCloser-filtered
 Set-Location -LiteralPath $filtered
 Write-Output "Filtered clone path: $(Get-Location)"
 $exe = 'C:\\Users\\naoki\\AppData\\Roaming\\Python\\Python313\\Scripts\\git-filter-repo.exe'

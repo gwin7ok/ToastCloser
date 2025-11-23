@@ -1,6 +1,6 @@
 Param()
-$orig = 'G:\\Cursor_Folder\\noticeWindowFinder'
-$filtered = 'G:\\Cursor_Folder\\noticeWindowFinder-filtered'
+$orig = 'G:\\Cursor_Folder\\ToastCloser'
+$filtered = 'G:\\Cursor_Folder\\ToastCloser-filtered'
 Set-Location -LiteralPath $orig
 Write-Output "Original repo: $orig"
 if (-not (Test-Path $filtered)) { Write-Output "ERROR: filtered repo not found at $filtered"; exit 2 }

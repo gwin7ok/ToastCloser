@@ -1,5 +1,5 @@
 Param()
-$filtered = 'G:\\Cursor_Folder\\noticeWindowFinder-filtered'
+$filtered = 'G:\\Cursor_Folder\\ToastCloser-filtered'
 if (-not (Test-Path $filtered)) { Write-Output "Filtered clone not found at $filtered"; exit 2 }
 Set-Location -LiteralPath $filtered
 $exe = 'C:\\Users\\naoki\\AppData\\Roaming\\Python\\Python313\\Scripts\\git-filter-repo.exe'

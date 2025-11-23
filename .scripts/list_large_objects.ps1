@@ -1,5 +1,5 @@
 Param()
-Set-Location -LiteralPath 'G:\Cursor_Folder\noticeWindowFinder'
+Set-Location -LiteralPath 'G:\Cursor_Folder\ToastCloser'
 Write-Output '--- publish/ entries in history ---'
 $publish = git rev-list --objects --all | Select-String 'publish/' -SimpleMatch -AllMatches | ForEach-Object { $_.Line }
 if ($publish) { $publish | Out-Host } else { Write-Output 'No publish/ entries found in history' }

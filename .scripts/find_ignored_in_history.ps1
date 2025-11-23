@@ -1,5 +1,5 @@
 Param()
-Set-Location -LiteralPath 'G:\Cursor_Folder\noticeWindowFinder'
+Set-Location -LiteralPath 'G:\Cursor_Folder\ToastCloser'
 Write-Output 'Reading .gitignore rules...'
 $gitignore = Get-Content .gitignore -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not ($_ -like '#*') }
 if (-not $gitignore) { Write-Output 'No .gitignore rules found.'; exit 0 }

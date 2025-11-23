@@ -2,7 +2,7 @@ param(
 	[int]$Seconds = 10
 )
 
-$proj = 'g:\Cursor_Folder\noticeWindowFinder\csharp\ToastCloser\ToastCloser.csproj'
+$proj = 'g:\Cursor_Folder\ToastCloser\csharp\ToastCloser\ToastCloser.csproj'
 	$p = Start-Process -FilePath 'dotnet' -ArgumentList @('run','--project',$proj,'--','--preserve-history','--preserve-history-idle-ms=2000','--detection-timeout-ms=1000','--win-shortcutkey-delay-ms=300') -PassThru
 Start-Sleep -Seconds $Seconds
 if ($p -and $p.Id) { Stop-Process -Id $p.Id -Force }

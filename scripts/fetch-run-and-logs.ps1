@@ -1,5 +1,5 @@
 param(
-    [string]$Repo = 'gwin7ok/noticeWindowFinder',
+    [string]$Repo = 'gwin7ok/ToastCloser',
     [string]$Workflow = 'release.yml',
     [int]$TimeoutSeconds = 300,
     [int]$PollIntervalSeconds = 5

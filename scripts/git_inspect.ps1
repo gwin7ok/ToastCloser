@@ -1,5 +1,5 @@
 Set-StrictMode -Version Latest
-Set-Location -LiteralPath 'G:\Cursor_Folder\noticeWindowFinder'
+Set-Location -LiteralPath 'G:\Cursor_Folder\ToastCloser'
 Write-Host '--- .git folder size ---'
 Get-ChildItem -LiteralPath .git -Recurse -Force | Measure-Object -Property Length -Sum | Format-List
 

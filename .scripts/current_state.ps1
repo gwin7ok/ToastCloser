@@ -1,5 +1,5 @@
 Param()
-Set-Location -LiteralPath 'G:\\Cursor_Folder\\noticeWindowFinder'
+Set-Location -LiteralPath 'G:\\Cursor_Folder\\ToastCloser'
 Write-Output '--- git status --porcelain ---'
 git status --porcelain
 Write-Output ''
@@ -21,9 +21,9 @@ $items = git rev-list --objects --all | ForEach-Object {
 $items | Sort-Object -Property Size -Descending | Select-Object -First 20 | ForEach-Object { Write-Output ("$($_.Size)`t$($_.Sha)`t$($_.Path)") }
 Write-Output ''
 Write-Output '--- backup and filtered paths existence ---'
-Write-Output "noticeWindowFinder .git.backup exists: $(Test-Path 'G:\\Cursor_Folder\\noticeWindowFinder\\.git.backup')"
-Write-Output "filtered clone exists: $(Test-Path 'G:\\Cursor_Folder\\noticeWindowFinder-filtered')"
-Write-Output "mirror exists: $(Test-Path 'G:\\Cursor_Folder\\noticeWindowFinder-mirror.git')"
+Write-Output "ToastCloser .git.backup exists: $(Test-Path 'G:\\Cursor_Folder\\ToastCloser\\.git.backup')"
+Write-Output "filtered clone exists: $(Test-Path 'G:\\Cursor_Folder\\ToastCloser-filtered')"
+Write-Output "mirror exists: $(Test-Path 'G:\\Cursor_Folder\\ToastCloser-mirror.git')"
 Write-Output ''
 Write-Output 'Done.'
 Return

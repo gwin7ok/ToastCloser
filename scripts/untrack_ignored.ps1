@@ -1,4 +1,4 @@
-Set-Location 'G:\Cursor_Folder\noticeWindowFinder'
+Set-Location 'G:\Cursor_Folder\ToastCloser'
 $files = @(git ls-files -i --exclude-from=.gitignore --cached)
 if ($files.Count -gt 0) {
   foreach ($f in $files) { git rm --cached --ignore-unmatch $f }

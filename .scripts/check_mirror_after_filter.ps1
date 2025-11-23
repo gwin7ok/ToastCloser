@@ -1,5 +1,5 @@
 Param()
-$mirror = Join-Path $PSScriptRoot '..\noticeWindowFinder-mirror.git'
+$mirror = Join-Path $PSScriptRoot '..\ToastCloser-mirror.git'
 Set-Location -LiteralPath $mirror
 Write-Output "Mirror repo: $mirror"
 Write-Output '--- Checking publish/ entries ---'
