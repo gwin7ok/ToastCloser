@@ -4,6 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWindowsForms>true</UseWindowsForms>
     <StartupObject>ToastCloser.TrayBootstrap</StartupObject>
     <ApplicationIcon>Resources\ToastCloser.ico</ApplicationIcon>
