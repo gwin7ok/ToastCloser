@@ -24,4 +24,7 @@ publish/
 # Ignore local logs directory (relative path `logs/`)
 logs/
 
+# Local temporary files for diagnostics; not checked in
+temp/
+
 
