@@ -38,6 +38,25 @@ namespace ToastCloser
                     bool createdNew = false;
                     var mutexName = "Global\\ToastCloser_mutex";
                     _singleInstanceMutex = new System.Threading.Mutex(true, mutexName, out createdNew);
+                    try
+                    {
+                        // Diagnostic helper: if the environment variable is set, show a messagebox
+                        // with mutex diagnostic info to help debug why createdNew is true/false.
+                        var dbg = System.Environment.GetEnvironmentVariable("TOASTCLOSER_SINGLE_INSTANCE_DEBUG");
+                        if (!string.IsNullOrEmpty(dbg))
+                        {
+                            try
+                            {
+                                var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                                var user = System.Environment.UserName ?? string.Empty;
+                                var argStr = args != null ? string.Join(' ', args) : string.Empty;
+                                var msg = $"mutexName={mutexName}\ncreatedNew={createdNew}\nargs={argStr}\nuser={user}\npid={pid}";
+                                NativeMethods.MessageBoxW(IntPtr.Zero, msg, "ToastCloser single-instance debug", 0x00000040);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                     if (!createdNew)
                     {
                         try
