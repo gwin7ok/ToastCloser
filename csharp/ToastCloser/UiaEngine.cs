@@ -303,9 +303,9 @@ namespace ToastCloser
                         return localFound;
                     });
 
-                    if (searchTask.Wait(detectionTimeoutMS))
+                    if (searchTask.Wait(detectionTimeoutMS) && searchTask.Status == TaskStatus.RanToCompletion)
                     {
-                        foundList = searchTask.Result;
+                        foundList = searchTask.Result ?? new System.Collections.Generic.List<FlaUI.Core.AutomationElements.AutomationElement>();
                     }
                     else
                     {
@@ -323,7 +323,7 @@ namespace ToastCloser
                             }
                             catch (Exception ex)
                             {
-                                try { logger.Error($"UIA reinitialization failed: {ex.Message}"); } catch { }
+                                try { logger?.Error($"UIA reinitialization failed: {ex.Message}"); } catch { }
                                 return false;
                             }
                         });
@@ -959,6 +959,7 @@ namespace ToastCloser
                 using var automation = new UIA3Automation();
                 var cf = new ConditionFactory(new UIA3PropertyLibrary());
                 var desktop = automation.GetDesktop();
+                if (desktop == null) return false;
                 var cond = cf.ByClassName("ControlCenterWindow").And(cf.ByName("クイック設定"));
                 var el = desktop.FindFirstChild(cond);
                 return el != null;
@@ -973,6 +974,7 @@ namespace ToastCloser
                 using var automation = new UIA3Automation();
                 var cf = new ConditionFactory(new UIA3PropertyLibrary());
                 var desktop = automation.GetDesktop();
+                if (desktop == null) return false;
                 var cond = cf.ByClassName("Windows.UI.Core.CoreWindow").And(cf.ByName("通知センター"));
                 var el = desktop.FindFirstChild(cond);
                 return el != null;

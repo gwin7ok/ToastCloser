@@ -17,20 +17,9 @@ namespace ToastCloser
     class Program
     {
         // track last real user input from keyboard/mouse (Environment.TickCount)
-        private static System.Threading.Mutex? _singleInstanceMutex = null;
         internal static uint _lastKeyboardTick = 0;
         internal static uint _lastMouseTick = 0;
         internal static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0,0);
-        // saved diagnostic values for single-instance check (populated before logger init)
-        private static bool? _createdNewDiagnostic = null;
-        private static string? _diagnosticMutexName = null;
-        private static string? _diagnosticArgs = null;
-        private static int? _diagnosticPid = null;
-        private static string? _diagnosticUser = null;
-            // monitoring state: whether we've started preserve-history monitoring (cleared after idle-success)
-            private static bool _monitoringStarted = false;
-            // verbose debug logging flag (set via --verbose-log)
-            private static bool _verboseLog = false;
 
             // Static constructor: runs before Main and before the type is JIT-compiled.
             // Register assembly resolve handlers here so any assembly load during JIT
@@ -39,7 +28,7 @@ namespace ToastCloser
 
         public static void Main(string[] args)
         {
-            var cfg = Config.Load();
+            var cfg = Config.Load() ?? new Config();
             string exeFolder = string.Empty;
             try { exeFolder = System.IO.Path.GetDirectoryName(System.Environment.GetCommandLineArgs()?.FirstOrDefault() ?? string.Empty) ?? string.Empty; } catch { }
             try { if (string.IsNullOrEmpty(exeFolder)) exeFolder = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty) ?? string.Empty; } catch { }
@@ -47,6 +36,18 @@ namespace ToastCloser
             if (string.IsNullOrEmpty(exeFolder)) exeFolder = AppContext.BaseDirectory ?? System.IO.Directory.GetCurrentDirectory();
             string logsDir = System.IO.Path.Combine(exeFolder, "logs");
             try { System.IO.Directory.CreateDirectory(logsDir); } catch { }
+
+            // Initialize logger here (was previously done in TrayBootstrap). Keep non-fatal.
+            try
+            {
+                var logPath = System.IO.Path.Combine(logsDir, "auto_closer.log");
+                Program.Logger.IsDebugEnabled = cfg.VerboseLog;
+                if (Program.Logger.Instance == null)
+                {
+                    Program.Logger.Instance = new Program.Logger(logPath);
+                }
+            }
+            catch { }
 
             int minSeconds = (int)cfg.DisplayLimitSeconds;
             int poll = (int)cfg.PollIntervalSeconds;
