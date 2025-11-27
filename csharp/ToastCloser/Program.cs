@@ -44,7 +44,7 @@ namespace ToastCloser
                 Program.Logger.IsDebugEnabled = cfg.VerboseLog;
                 if (Program.Logger.Instance == null)
                 {
-                    Program.Logger.Instance = new Program.Logger(logPath);
+                    Program.Logger.Instance = new Program.Logger(logPath, cfg.LogArchiveLimit);
                 }
             }
             catch { }
@@ -253,10 +253,55 @@ namespace ToastCloser
             public static bool IsDebugEnabled = false;
             private readonly object _lock = new object();
             private readonly System.IO.StreamWriter _writer;
-            public Logger(string path)
+            private readonly int _archiveLimit;
+            public Logger(string path, int archiveLimit = 0)
             {
+                _archiveLimit = archiveLimit;
                 // Open the file with shared read/write so other writers (e.g., File.AppendAllText)
                 // can append concurrently for diagnostic entries.
+                // Perform rotation BEFORE opening the log for append.
+                try
+                {
+                    if (System.IO.File.Exists(path))
+                    {
+                        try
+                        {
+                            var ctime = System.IO.File.GetCreationTimeUtc(path);
+                            var ts = ctime.ToString("yyyy-MM-dd-HH-mm-ss");
+                            var dir = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
+                            var baseName = System.IO.Path.GetFileNameWithoutExtension(path);
+                            var ext = System.IO.Path.GetExtension(path);
+                            var destName = baseName + "." + ts + ext;
+                            var dest = System.IO.Path.Combine(dir, destName);
+                            try { System.IO.File.Move(path, dest); } catch { }
+
+                            // Prune archives according to provided limit (archiveLimit <= 0 => no pruning)
+                            if (_archiveLimit > 0)
+                            {
+                                try
+                                {
+                                    var dirInfo = new System.IO.DirectoryInfo(dir);
+                                    var files = dirInfo.GetFiles()
+                                        .Where(f => System.Text.RegularExpressions.Regex.IsMatch(f.Name, System.Text.RegularExpressions.Regex.Escape(baseName) + @"\..+" + System.Text.RegularExpressions.Regex.Escape(ext) + "$"))
+                                        .OrderBy(f => f.CreationTimeUtc)
+                                        .ToList();
+                                    if (files.Count > _archiveLimit)
+                                    {
+                                        int toDelete = files.Count - _archiveLimit;
+                                        for (int i = 0; i < toDelete; i++)
+                                        {
+                                            try { files[i].Delete(); } catch { }
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
                 var fs = new System.IO.FileStream(path, System.IO.FileMode.Append, System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite);
                 _writer = new System.IO.StreamWriter(fs) { AutoFlush = true };
                 try
