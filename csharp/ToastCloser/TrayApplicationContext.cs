@@ -12,6 +12,10 @@ namespace ToastCloser
         private Config _config;
         private SettingsForm? _settingsForm;
         private ConsoleForm? _consoleForm;
+        // Track middle-button down/up to ensure both occur on this icon
+        private bool _sawMiddleDown = false;
+        private int _middleDownTick = 0;
+        private System.Drawing.Point _middleDownPos;
 
         public TrayApplicationContext(Config cfg)
         {
@@ -131,13 +135,44 @@ namespace ToastCloser
             _trayIcon.ContextMenuStrip = _menu;
             _trayIcon.DoubleClick += (s, e) => ToggleConsole();
             // Middle-click the tray icon to exit (same as selecting "終了" from the menu)
-            _trayIcon.MouseClick += (s, e) =>
+            // Only exit when a middle-button down AND subsequent up occurred on this icon
+            _trayIcon.MouseDown += (s, e) =>
             {
                 try
                 {
                     if (e is MouseEventArgs me && me.Button == MouseButtons.Middle)
                     {
-                        ExitApplication();
+                        _sawMiddleDown = true;
+                        _middleDownTick = Environment.TickCount;
+                        try { _middleDownPos = Cursor.Position; } catch { _middleDownPos = new System.Drawing.Point(0, 0); }
+                    }
+                }
+                catch { }
+            };
+
+            _trayIcon.MouseUp += (s, e) =>
+            {
+                try
+                {
+                    if (e is MouseEventArgs me && me.Button == MouseButtons.Middle)
+                    {
+                        if (_sawMiddleDown)
+                        {
+                            // Basic safety checks: time and small movement between down and up
+                            int tick = Environment.TickCount;
+                            int delta = tick - _middleDownTick;
+                            System.Drawing.Point upPos;
+                            try { upPos = Cursor.Position; } catch { upPos = new System.Drawing.Point(0, 0); }
+                            int dx = upPos.X - _middleDownPos.X;
+                            int dy = upPos.Y - _middleDownPos.Y;
+                            int distSq = dx * dx + dy * dy;
+                            // If the up occurred within 2 seconds and within ~16 pixels, treat as click on same spot
+                            if (delta >= 0 && delta <= 2000 && distSq <= 16 * 16)
+                            {
+                                ExitApplication();
+                            }
+                        }
+                        _sawMiddleDown = false;
                     }
                 }
                 catch { }
