@@ -29,6 +29,32 @@ namespace ToastCloser
             }
             catch { }
 
+            // Defer loading past logs and wiring logger/scroll detection until OnLoad
+            try
+            {
+                Program.Logger.Instance?.Debug("ConsoleForm: deferring LoadPastLogs/SubscribeLogger/WireScrollDetection until OnLoad");
+            }
+            catch { }
+
+            try
+            {
+                Program.Logger.Instance?.Debug("ConsoleForm: constructor done");
+            }
+            catch { }
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+
+            // Ensure logger finished rotation/initialization before reading logs
+            try
+            {
+                Program.Logger.Instance?.Debug("ConsoleForm.OnLoad: waiting for Logger readiness");
+                Program.Logger.WaitUntilReady(3000);
+            }
+            catch { }
+
             // Load past logs first, then subscribe for live updates
             try
             {
@@ -62,17 +88,6 @@ namespace ToastCloser
             {
                 try { Program.Logger.Instance?.Error("ConsoleForm: WireScrollDetection() failed: " + ex.Message); } catch { }
             }
-
-            try
-            {
-                Program.Logger.Instance?.Debug("ConsoleForm: constructor done");
-            }
-            catch { }
-        }
-
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
             try
             {
                 // Apply saved geometry if present
@@ -513,7 +528,6 @@ namespace ToastCloser
             {
                 var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
                 if (!Directory.Exists(logsDir)) return;
-
                 // Wait a short time for logger rotation to complete so we don't race with startup archive move.
                 try
                 {
@@ -524,24 +538,24 @@ namespace ToastCloser
                 }
                 catch { }
 
-                var files = Directory.GetFiles(logsDir, "auto_closer*").OrderBy(f => File.GetCreationTime(f)).ToArray();
+                // Read only the main live log file to avoid iterating over many archived files.
+                var mainLog = Path.Combine(logsDir, "auto_closer.log");
                 var combined = new System.Collections.Generic.List<string>();
-                foreach (var f in files)
+                try
                 {
-                    try
+                    if (File.Exists(mainLog))
                     {
-                        var tail = ReadLastLines(f, perFileTail);
-                        if (tail != null && tail.Length > 0) combined.AddRange(tail);
-                        // keep combined bounded
-                        if (combined.Count > maxTotalLines)
-                        {
-                            combined = combined.Skip(Math.Max(0, combined.Count - maxTotalLines)).ToList();
-                        }
+                        var tail = ReadLastLines(mainLog, perFileTail);
+                        if (tail != null && tail.Any()) combined.AddRange(tail);
                     }
-                        catch (Exception ex)
+                    else
                     {
-                        try { Program.Logger.Instance?.Error($"ConsoleForm.LoadPastLogs: error reading {f}: {ex.Message}"); } catch { }
+                        try { Program.Logger.Instance?.Debug("ConsoleForm.LoadPastLogs: main log not found, skipping past logs"); } catch { }
                     }
+                }
+                catch (Exception ex)
+                {
+                    try { Program.Logger.Instance?.Error($"ConsoleForm.LoadPastLogs: error reading {mainLog}: {ex.Message}"); } catch { }
                 }
 
                 // Append lines to UI in a single BeginInvoke batch to avoid blocking
@@ -570,60 +584,39 @@ namespace ToastCloser
             finally { _autoScroll = true; }
         }
 
-        private static string[] ReadLastLines(string path, int maxLines)
+        private IEnumerable<string> ReadLastLines(string path, int maxLines)
         {
-            try
+            var lines = new List<string>();
+            // Try with read/write share by default and a few retries to handle rotation/writer races
+            int[] delays = new[] { 50, 100, 200 };
+            for (int attempt = 0; attempt <= delays.Length; attempt++)
             {
-                // Efficient streaming to keep only last N lines
-                var q = new System.Collections.Generic.Queue<string>();
-                foreach (var line in File.ReadLines(path))
-                {
-                    q.Enqueue(line);
-                    if (q.Count > maxLines) q.Dequeue();
-                }
-                return q.ToArray();
-            }
-            catch (Exception ex)
-            {
-                // Diagnostic: log full exception and file metadata to help determine whether
-                // the failure is due to an exclusive lock by another process or another cause.
-                try { Program.Logger.Instance?.Error("ReadLastLines error: " + ex.ToString()); } catch { }
                 try
                 {
-                    var fi = new FileInfo(path);
-                    bool exists = false; long len = -1; DateTime lwt = DateTime.MinValue;
-                    try { exists = fi.Exists; if (exists) { len = fi.Length; lwt = fi.LastWriteTime; } } catch { }
-                    try { Program.Logger.Instance?.Debug("ReadLastLines diagnostic: Exists=" + exists + " Length=" + (len >= 0 ? len.ToString() : "(n/a)") + " LastWrite=" + (lwt != DateTime.MinValue ? lwt.ToString("O") : "(n/a)")); } catch { }
-                }
-                catch { }
-
-                // Try opening with more permissive sharing to check if file is readable while another
-                // process holds a handle without ReadWrite sharing. This does not change caller semantics
-                // except to provide diagnostic logs; if we can open with FileShare.ReadWrite we will read
-                // the tail and return it so the UI can display logs for diagnosis.
-                try
-                {
-                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var fs = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     using (var sr = new StreamReader(fs))
                     {
-                        var q2 = new System.Collections.Generic.Queue<string>();
-                        string? line;
-                        while ((line = sr.ReadLine()) != null)
+                        var all = sr.ReadToEnd();
+                        if (!string.IsNullOrEmpty(all))
                         {
-                            q2.Enqueue(line);
-                            if (q2.Count > maxLines) q2.Dequeue();
+                            var arr = all.Replace("\r\n", "\n").Split('\n');
+                            var start = Math.Max(0, arr.Length - maxLines);
+                            for (int i = start; i < arr.Length; i++) if (!string.IsNullOrEmpty(arr[i])) lines.Add(arr[i]);
                         }
-                        try { Program.Logger.Instance?.Info("ReadLastLines diagnostic: opened with FileShare.ReadWrite successfully — returning read lines for inspection"); } catch { }
-                        return q2.ToArray();
+                    }
+                    // success
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    try { Program.Logger.Instance?.Error("ReadLastLines error: " + ex.ToString()); } catch { }
+                    if (attempt < delays.Length)
+                    {
+                        try { Thread.Sleep(delays[attempt]); } catch { }
                     }
                 }
-                catch (Exception ex2)
-                {
-                    try { Program.Logger.Instance?.Error("ReadLastLines diagnostic: open with FileShare.ReadWrite failed: " + ex2.ToString()); } catch { }
-                }
-
-                return Array.Empty<string>();
             }
+            return lines;
         }
 
         private DateTime? ParseLogLineTimestamp(string line)
