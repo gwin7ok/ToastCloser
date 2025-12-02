@@ -348,7 +348,7 @@ namespace ToastCloser
                                     {
                                         displayTimerActive = true;
                                         displayDeadline = DateTime.UtcNow.AddSeconds(minSeconds);
-                                        try { logger?.Info($"Display timer set (deadline={displayDeadline.Value.ToLocalTime():O}, displayLimitSeconds={minSeconds})"); } catch { }
+                                        try { logger?.Info($"Display timer set (deadline={displayDeadline.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")}, displayLimitSeconds={minSeconds})"); } catch { }
                                         workerDeadline = displayDeadline.Value;
                                         shouldStartWorker = true;
                                     }
@@ -363,7 +363,7 @@ namespace ToastCloser
                                             var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
                                             if (waitMs > 0) await Task.Delay(waitMs).ConfigureAwait(false);
 
-                                            try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime():O})"); } catch { }
+                                            try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")})"); } catch { }
 
                                             var monitoringStart = DateTime.UtcNow;
 

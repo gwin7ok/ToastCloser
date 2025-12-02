@@ -310,7 +310,7 @@ namespace ToastCloser
                     var exists = System.IO.File.Exists(path);
                     long len = -1;
                     try { len = exists ? new System.IO.FileInfo(path).Length : -1; } catch { }
-                    var text = $"local={System.DateTime.Now:O}\r\nlogPath={path}\r\nfileExists={exists}\r\nlength={len}\r\n";
+                    var text = $"local={System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")}\r\nlogPath={path}\r\nfileExists={exists}\r\nlength={len}\r\n";
                     try { System.IO.File.WriteAllText(diagOpen, text); } catch { }
                 }
                 catch { }
