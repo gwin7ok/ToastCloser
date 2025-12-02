@@ -54,7 +54,6 @@ namespace ToastCloser
             int poll = (int)cfg.PollIntervalSeconds;
             int detectionTimeoutMS = cfg.DetectionTimeoutMS;
             bool detectOnly = cfg.DetectOnly;
-            bool preserveHistory = cfg.ShortcutKeyMaxWaitSeconds > 0;
             int shortcutKeyWaitIdleMS = cfg.ShortcutKeyWaitIdleMS;
             int shortcutKeyMaxWaitMS = cfg.ShortcutKeyMaxWaitSeconds * 1000;
             int winShortcutKeyIntervalMS = cfg.WinShortcutKeyIntervalMS;
@@ -62,7 +61,7 @@ namespace ToastCloser
             bool wmCloseOnly = false;
 
             // Emit startup INFO (match v1.0.0 behavior)
-            try { Logger.Instance?.Info($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} shortcutKeyMode={shortcutKeyMode} wmCloseOnly={wmCloseOnly} detectionTimeoutMS={detectionTimeoutMS} winShortcutKeyIntervalMS={winShortcutKeyIntervalMS})"); } catch { }
+            try { Logger.Instance?.Info($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} shortcutKeyMode={shortcutKeyMode} wmCloseOnly={wmCloseOnly} detectionTimeoutMS={detectionTimeoutMS} winShortcutKeyIntervalMS={winShortcutKeyIntervalMS})"); } catch { }
 
             using var cts = new CancellationTokenSource();
             // hook standard shutdown signals to cancel RunLoop so it can exit cleanly
@@ -70,7 +69,7 @@ namespace ToastCloser
             Console.CancelKeyPress += (s, e) => { try { Logger.Instance?.Info("CancelKeyPress received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } };
             try { SystemEvents.SessionEnding += (s, e) => { try { Logger.Instance?.Info("SessionEnding received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } }; } catch { }
 
-            UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, preserveHistory, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
+            UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
 
             try { Logger.Instance?.Info("RunLoop exited, performing shutdown cleanup"); } catch { }
             // brief pause to ensure final log lines are flushed to disk before disposing

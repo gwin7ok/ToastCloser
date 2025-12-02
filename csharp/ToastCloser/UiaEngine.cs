@@ -14,7 +14,7 @@ namespace ToastCloser
     // Encapsulates all FlaUI-dependent code so Program.cs can remain free of FlaUI type references.
     public static class UiaEngine
     {
-        public static void RunLoop(Config cfg, string exeFolder, string logsDir, int minSeconds, int poll, int detectionTimeoutMS, bool detectOnly, bool preserveHistory, int shortcutKeyWaitIdleMS, int shortcutKeyMaxWaitMS, int winShortcutKeyIntervalMS, string shortcutKeyMode, bool wmCloseOnly, CancellationToken ct = default)
+        public static void RunLoop(Config cfg, string exeFolder, string logsDir, int minSeconds, int poll, int detectionTimeoutMS, bool detectOnly, int shortcutKeyWaitIdleMS, int shortcutKeyMaxWaitMS, int winShortcutKeyIntervalMS, string shortcutKeyMode, bool wmCloseOnly, CancellationToken ct = default)
         {
             var logger = Program.Logger.Instance;
 
@@ -66,12 +66,7 @@ namespace ToastCloser
 
             // Local copy of config flags used inside the loop
             var localCfg = cfg ?? new Config();
-            // Enforce timer-only behavior: disable legacy preserve-history fallback
-            if (preserveHistory)
-            {
-                try { logger?.Info("preserveHistory flag overridden: running display-timer-only mode"); } catch (Exception ex) { try { logger?.Debug("Log preserveHistory info failed: " + ex.Message); } catch { } }
-            }
-            preserveHistory = false;
+            // preserveHistory feature removed: operate in timer-only mode.
             bool _monitoringStarted = false;
 
             while (true)
@@ -79,16 +74,7 @@ namespace ToastCloser
                 if (ct.IsCancellationRequested) break;
                 try
                 {
-                    if (preserveHistory && !_monitoringStarted)
-                    {
-                        lock (stateLock)
-                        {
-                            if (tracked.Count > 0)
-                            {
-                                // preserve-history fallback disabled (timer-only mode)
-                            }
-                        }
-                    }
+                    // preserveHistory removed; no legacy monitoring fallback
 
                     lock (automationLock)
                     {
@@ -648,274 +634,91 @@ namespace ToastCloser
                             }
 
                             bool closed = false;
-                            if (preserveHistory)
+                            string? closedBy = null;
+                            try
                             {
+                                bool attempted = false;
                                 try
                                 {
-                                    uint lastSystemTick = 0;
-                                    try
+                                    if (w.Patterns != null && w.Patterns.Window != null && w.Patterns.Window.IsSupported)
                                     {
-                                        var li2 = new NativeMethods.LASTINPUTINFO();
-                                        li2.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.LASTINPUTINFO));
-                                        if (NativeMethods.GetLastInputInfo(ref li2)) lastSystemTick = li2.dwTime;
-                                    }
-                                    catch { }
-
-                                    uint lastKbMouseTick = Math.Max(Program._lastKeyboardTick, Program._lastMouseTick);
-
-                                    bool treatAsActive = false;
-                                    try
-                                    {
-                                        while (true)
-                                        {
-                                            uint curLastKbMouseTick = Math.Max(Program._lastKeyboardTick, Program._lastMouseTick);
-                                            uint curLastSystemTick = 0;
-                                            try
-                                            {
-                                                var li2 = new NativeMethods.LASTINPUTINFO();
-                                                li2.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.LASTINPUTINFO));
-                                                if (NativeMethods.GetLastInputInfo(ref li2)) curLastSystemTick = li2.dwTime;
-                                            }
-                                            catch { }
-
-                                            try
-                                            {
-                                                var dbgSys = curLastSystemTick;
-                                                logger?.Debug($"key={key} DebugTicks: EnvTick={Environment.TickCount} lastKb={Program._lastKeyboardTick} lastMouse={Program._lastMouseTick} curLastKbMouseTick={curLastKbMouseTick} lastSystemInput={dbgSys}");
-                                            }
-                                            catch { }
-
-                                            bool isActiveNow = false;
-                                            if (curLastKbMouseTick != 0)
-                                            {
-                                                uint elapsedSinceLastInput = (uint)(Environment.TickCount - curLastKbMouseTick);
-                                                if (elapsedSinceLastInput <= (uint)shortcutKeyWaitIdleMS)
-                                                {
-                                                    isActiveNow = true;
-                                                }
-                                            }
-                                            else
-                                            {
-                                                isActiveNow = false;
-                                            }
-
-                                            if (!isActiveNow)
-                                            {
-                                                treatAsActive = false;
-                                                break;
-                                            }
-
-                                            logger?.Debug($"key={key} User active: waiting up to {shortcutKeyWaitIdleMS}ms while polling for keyboard/mouse activity (preserve-history)");
-                                            int waited = 0;
-                                            int step = Math.Min(200, Math.Max(50, shortcutKeyWaitIdleMS / 10));
-                                            bool innerIdleSatisfied = false;
-                                            while (waited < shortcutKeyWaitIdleMS)
-                                            {
-                                                Thread.Sleep(step);
-                                                waited += step;
-
-                                                try
-                                                {
-                                                    if (NativeMethods.GetCursorPos(out var curPos))
-                                                    {
-                                                        if (curPos.X != Program._lastCursorPos.X || curPos.Y != Program._lastCursorPos.Y)
-                                                        {
-                                                            Program._lastCursorPos = curPos;
-                                                            Program._lastMouseTick = (uint)Environment.TickCount;
-                                                            logger?.Debug($"key={key} Detected mouse movement during wait; updating lastMouseTick");
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-                                                catch { }
-
-                                                try
-                                                {
-                                                            for (int vk = 0x01; vk <= 0xFE; vk++)
-                                                    {
-                                                        try
-                                                        {
-                                                            short s = NativeMethods.GetAsyncKeyState(vk);
-                                                            bool transition = (s & 0x0001) != 0;
-                                                            bool down = (s & 0x8000) != 0;
-                                                            if (transition || (down && Program.IsKeyboardVirtualKey(vk)))
-                                                            {
-                                                                Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                                logger?.Debug($"key={key} Detected keyboard activity (vk={vk}) during wait; updating lastKeyboardTick");
-                                                                break;
-                                                            }
-                                                        }
-                                                        catch { }
-                                                    }
-                                                }
-                                                catch { }
-
-                                                try
-                                                {
-                                                    uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
-                                                    if (elapsedSinceLastInput >= (uint)shortcutKeyWaitIdleMS)
-                                                    {
-                                                        innerIdleSatisfied = true;
-                                                        break;
-                                                    }
-                                                }
-                                                catch { }
-                                            }
-                                            if (innerIdleSatisfied) isActiveNow = false;
-                                        }
-                                    }
-                                    catch (ThreadInterruptedException) { }
-                                    if (treatAsActive)
-                                    {
-                                        closed = false;
-                                    }
-                                    else
-                                    {
-                                        if (!actionCenterToggled)
-                                        {
-                                            var present = new List<(string key, string name)>();
-                                            foreach (var fe in found)
-                                            {
-                                                try { var k = MakeKey(fe); var nm = SafeGetName(fe).Replace('\n',' ').Replace('\r',' ').Trim(); present.Add((k, nm)); } catch { }
-                                            }
-                                            var dedup = present.GroupBy(p => p.key).Select(g => g.First()).ToList();
-                                            var summary = string.Join(" | ", dedup.Select(d => $"key={d.key} name=\"{d.name}\""));
-                                            logger?.Info($"key={key} Opening Action Center to preserve history for {dedup.Count} toasts: {summary}");
-
-                                            if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
-                                            {
-                                                ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                logger?.Info($"key={key} Notification Center toggled (preserve-history)");
-                                            }
-                                            else
-                                            {
-                                                ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                logger?.Info($"key={key} Action Center toggled (preserve-history)");
-                                            }
-
-                                            lock (stateLock)
-                                            {
-                                                foreach (var d in dedup)
-                                                {
-                                                    try
-                                                    {
-                                                        if (tracked.ContainsKey(d.key))
-                                                        {
-                                                            tracked.Remove(d.key);
-                                                            var cbMsg = $"key={d.key} ClosedBy=PreserveHistory | name=\"{d.name}\"";
-                                                            logger?.Info(cbMsg);
-                                                        }
-                                                    }
-                                                    catch { }
-                                                }
-                                            }
-                                            actionCenterToggled = true;
-                                            closed = true;
-                                        }
-                                            else
-                                        {
-                                            logger?.Info($"key={key} Action Center already toggled this scan; assuming toast moved to history");
-                                            lock (stateLock)
-                                            {
-                                                if (tracked.ContainsKey(key)) tracked.Remove(key);
-                                            }
-                                            closed = true;
-                                        }
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    logger?.Error($"key={key} preserve-history failed: {ex.Message}");
-                                }
-                            }
-                            else
-                            {
-                                string? closedBy = null;
-                                try
-                                {
-                                    bool attempted = false;
-                                    try
-                                    {
-                                        if (w.Patterns != null && w.Patterns.Window != null && w.Patterns.Window.IsSupported)
-                                        {
-                                            attempted = true;
-                                            try
-                                            {
-                                                w.Patterns.Window.Pattern.Close();
-                                                closed = true;
-                                                closedBy = "WindowPattern.Close";
-                                                logger?.Info($"key={key} Attempted WindowPattern.Close");
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                logger?.Debug($"key={key} WindowPattern.Close threw: {ex.Message}");
-                                            }
-                                        }
-                                    }
-                                    catch { }
-
-                                    if (!attempted)
-                                    {
-                                        logger?.Info($"key={key} WindowPattern not supported on element; skipping other fallbacks");
+                                        attempted = true;
                                         try
                                         {
-                                            IntPtr nativeHwnd = IntPtr.Zero;
-                                            try { var nv = w.Properties.NativeWindowHandle.ValueOrDefault; if (nv != 0) nativeHwnd = new IntPtr(nv); } catch { }
-                                            var className = w.ClassName ?? string.Empty;
-                                            var aid = string.Empty;
-                                            try { aid = w.Properties.AutomationId.ValueOrDefault ?? string.Empty; } catch { }
-                                            var rid = SafeGetRuntimeIdString(w);
-                                            var pid = SafeGetProcessId(w);
-                                            var rect = w.BoundingRectangle;
-                                            logger?.Info($"key={key} Diagnostics: class={className} aid={aid} nativeHandle=0x{nativeHwnd.ToInt64():X} pid={pid} rid={rid} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
+                                            w.Patterns.Window.Pattern.Close();
+                                            closed = true;
+                                            closedBy = "WindowPattern.Close";
+                                            logger?.Info($"key={key} Attempted WindowPattern.Close");
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            logger?.Debug($"key={key} WindowPattern.Close threw: {ex.Message}");
+                                        }
+                                    }
+                                }
+                                catch { }
 
-                                            int textCount = 0;
-                                            try { var tnodes = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text)); textCount = tnodes?.Length ?? 0; } catch { }
-                                            logger?.Info($"key={key} Diagnostics: textNodeCount={textCount}");
+                                if (!attempted)
+                                {
+                                    logger?.Info($"key={key} WindowPattern not supported on element; skipping other fallbacks");
+                                    try
+                                    {
+                                        IntPtr nativeHwnd = IntPtr.Zero;
+                                        try { var nv = w.Properties.NativeWindowHandle.ValueOrDefault; if (nv != 0) nativeHwnd = new IntPtr(nv); } catch { }
+                                        var className = w.ClassName ?? string.Empty;
+                                        var aid = string.Empty;
+                                        try { aid = w.Properties.AutomationId.ValueOrDefault ?? string.Empty; } catch { }
+                                        var rid = SafeGetRuntimeIdString(w);
+                                        var pid = SafeGetProcessId(w);
+                                        var rect = w.BoundingRectangle;
+                                        logger?.Info($"key={key} Diagnostics: class={className} aid={aid} nativeHandle=0x{nativeHwnd.ToInt64():X} pid={pid} rid={rid} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
 
-                                            bool hasCloseBtn = false;
-                                            try { var btnCond = cfSafe.ByControlType(ControlType.Button).And(cfSafe.ByName("閉じる").Or(cfSafe.ByName("Close"))); var btn = w.FindFirstDescendant(btnCond); hasCloseBtn = btn != null; } catch { }
-                                            logger?.Info($"key={key} Diagnostics: hasCloseButton={hasCloseBtn}");
+                                        int textCount = 0;
+                                        try { var tnodes = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text)); textCount = tnodes?.Length ?? 0; } catch { }
+                                        logger?.Info($"key={key} Diagnostics: textNodeCount={textCount}");
 
-                                            try
+                                        bool hasCloseBtn = false;
+                                        try { var btnCond = cfSafe.ByControlType(ControlType.Button).And(cfSafe.ByName("閉じる").Or(cfSafe.ByName("Close"))); var btn = w.FindFirstDescendant(btnCond); hasCloseBtn = btn != null; } catch { }
+                                        logger?.Info($"key={key} Diagnostics: hasCloseButton={hasCloseBtn}");
+
+                                        try
+                                        {
+                                            var hostHwnd = FindHostWindowHandle(w);
+                                            if (hostHwnd != IntPtr.Zero)
                                             {
-                                                var hostHwnd = FindHostWindowHandle(w);
-                                                if (hostHwnd != IntPtr.Zero)
-                                                {
-                                                    var csb = new System.Text.StringBuilder(256);
-                                                    var clenHost = NativeMethods.GetClassName(hostHwnd, csb, csb.Capacity);
-                                                    var hostClass = clenHost > 0 ? csb.ToString() : string.Empty;
-                                                    var titleSb = new System.Text.StringBuilder(256);
-                                                    NativeMethods.GetWindowText(hostHwnd, titleSb, titleSb.Capacity);
-                                                    var hostTitle = titleSb.ToString() ?? string.Empty;
-                                                    logger?.Info($"key={key} Diagnostics: hostHwnd=0x{hostHwnd.ToInt64():X} hostClass={hostClass} hostTitle=\"{hostTitle}\"");
-                                                }
-                                                else
-                                                {
-                                                    logger?.Info($"key={key} Diagnostics: hostHwnd=0 (none found)");
-                                                }
+                                                var csb = new System.Text.StringBuilder(256);
+                                                var clenHost = NativeMethods.GetClassName(hostHwnd, csb, csb.Capacity);
+                                                var hostClass = clenHost > 0 ? csb.ToString() : string.Empty;
+                                                var titleSb = new System.Text.StringBuilder(256);
+                                                NativeMethods.GetWindowText(hostHwnd, titleSb, titleSb.Capacity);
+                                                var hostTitle = titleSb.ToString() ?? string.Empty;
+                                                logger?.Info($"key={key} Diagnostics: hostHwnd=0x{hostHwnd.ToInt64():X} hostClass={hostClass} hostTitle=\"{hostTitle}\"");
                                             }
-                                            catch (Exception ex)
+                                            else
                                             {
-                                                logger?.Debug($"key={key} Diagnostics: FindHostWindowHandle error: {ex.Message}");
+                                                logger?.Info($"key={key} Diagnostics: hostHwnd=0 (none found)");
                                             }
                                         }
                                         catch (Exception ex)
                                         {
-                                            logger?.Debug($"key={key} Diagnostics logging failed: {ex.Message}");
+                                            logger?.Debug($"key={key} Diagnostics: FindHostWindowHandle error: {ex.Message}");
                                         }
                                     }
+                                    catch (Exception ex)
+                                    {
+                                        logger?.Debug($"key={key} Diagnostics logging failed: {ex.Message}");
+                                    }
                                 }
-                                catch (Exception ex)
-                                {
-                                    logger?.Error($"key={key} Error during WindowPattern attempt: {ex.Message}");
-                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                logger?.Error($"key={key} Error during WindowPattern attempt: {ex.Message}");
+                            }
 
-                                if (closed && !string.IsNullOrEmpty(closedBy))
-                                {
-                                    var cbMsg = $"key={key} ClosedBy={closedBy}";
-                                    logger?.Info(cbMsg);
-                                }
+                            if (closed && !string.IsNullOrEmpty(closedBy))
+                            {
+                                var cbMsg = $"key={key} ClosedBy={closedBy}";
+                                logger?.Info(cbMsg);
                             }
 
                             if (closed)
