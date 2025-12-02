@@ -522,7 +522,8 @@ namespace ToastCloser
         private void LoadPastLogs()
         {
             // Load only the tail of log files to avoid huge memory/CPU usage
-            const int maxTotalLines = 5000;
+            // Overall maximum lines to keep in initial load (protect UI/memory)
+            const int MaxTotalLines = 5000;
             const int perFileTail = 2000;
             try
             {
@@ -547,6 +548,11 @@ namespace ToastCloser
                     {
                         var tail = ReadLastLines(mainLog, perFileTail);
                         if (tail != null && tail.Any()) combined.AddRange(tail);
+                        // Enforce overall max total lines to protect UI/memory
+                        if (combined.Count > MaxTotalLines)
+                        {
+                            combined = combined.Skip(Math.Max(0, combined.Count - MaxTotalLines)).ToList();
+                        }
                     }
                     else
                     {
@@ -558,17 +564,38 @@ namespace ToastCloser
                     try { Program.Logger.Instance?.Error($"ConsoleForm.LoadPastLogs: error reading {mainLog}: {ex.Message}"); } catch { }
                 }
 
-                // Append lines to UI in a single BeginInvoke batch to avoid blocking
+                // Append lines to UI in a single batched update so the control opens already scrolled to the bottom.
                 if (combined.Count > 0)
                 {
                     try
                     {
                         this.BeginInvoke(new Action(() =>
                         {
-                            foreach (var line in combined)
+                            try
                             {
-                                try { AppendLine(line); } catch { }
+                                using (BeginProgrammaticScroll())
+                                {
+                                    if (_rtb is ScrollAwareRichTextBox sar)
+                                    {
+                                        sar.SuppressVScroll = true;
+                                    }
+
+                                    var sb = new System.Text.StringBuilder(combined.Count * 128);
+                                    foreach (var line in combined) sb.AppendLine(line);
+                                    _rtb.AppendText(sb.ToString());
+
+                                    // After bulk append, move caret to end so the view is at latest line.
+                                    _rtb.SelectionStart = _rtb.Text.Length;
+                                    _rtb.SelectionLength = 0;
+                                    _rtb.ScrollToCaret();
+
+                                    if (_rtb is ScrollAwareRichTextBox sar2)
+                                    {
+                                        sar2.SuppressVScroll = false;
+                                    }
+                                }
                             }
+                            catch { }
                         }));
                     }
                     catch (Exception ex)
