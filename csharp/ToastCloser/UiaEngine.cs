@@ -26,6 +26,9 @@ namespace ToastCloser
             DateTime? displayDeadline = null;
             bool displayTimerActive = false;
             var displayTimerLock = new object();
+            // Single lock to protect shared state: tracked, groups, nextGroupId,
+            // displayTimerActive, displayDeadline. Keep critical sections small.
+            var stateLock = new object();
 
             // UIA automation instances are reinitializable on timeout. Keep them in mutable variables
             UIA3Automation? automation = new UIA3Automation();
@@ -67,9 +70,15 @@ namespace ToastCloser
             {
                 try
                 {
-                    if (preserveHistory && !_monitoringStarted && tracked.Count > 0)
+                    if (preserveHistory && !_monitoringStarted)
                     {
-                        // preserve-history fallback disabled (timer-only mode)
+                        lock (stateLock)
+                        {
+                            if (tracked.Count > 0)
+                            {
+                                // preserve-history fallback disabled (timer-only mode)
+                            }
+                        }
                     }
 
                     lock (automationLock)
@@ -236,18 +245,22 @@ namespace ToastCloser
                         {
                             int assignedGroup = -1;
                             var now = DateTime.UtcNow;
-                            foreach (var kv in tracked)
+                            // Determine group id with minimal locking
+                            lock (stateLock)
                             {
-                                if ((now - kv.Value.FirstSeen).TotalSeconds <= 1.0)
+                                foreach (var kv in tracked)
                                 {
-                                    assignedGroup = kv.Value.GroupId;
-                                    break;
+                                    if ((now - kv.Value.FirstSeen).TotalSeconds <= 1.0)
+                                    {
+                                        assignedGroup = kv.Value.GroupId;
+                                        break;
+                                    }
                                 }
-                            }
-                            if (assignedGroup == -1)
-                            {
-                                assignedGroup = nextGroupId++;
-                                groups[assignedGroup] = now;
+                                if (assignedGroup == -1)
+                                {
+                                    assignedGroup = nextGroupId++;
+                                    groups[assignedGroup] = now;
+                                }
                             }
                             var methodStr = "priority";
                             string contentSummary = string.Empty;
@@ -289,164 +302,173 @@ namespace ToastCloser
                             var pidVal2 = SafeGetProcessId(w);
                             var safeName2 = SafeGetName(w).Replace('\n', ' ').Replace('\r', ' ').Trim();
                             var cleanName = CleanNotificationName(safeName2, contentSummary);
-                            tracked[key] = new TrackedInfo { FirstSeen = now, GroupId = assignedGroup, Method = methodStr, Pid = pidVal2, ShortName = cleanName };
+                            lock (stateLock)
+                            {
+                                tracked[key] = new TrackedInfo { FirstSeen = now, GroupId = assignedGroup, Method = methodStr, Pid = pidVal2, ShortName = cleanName };
+                            }
 
                             // If no display timer is active, set one now and start a background
                             // worker that will wait until the deadline and then perform the
                             // idle-check -> send-shortcut flow. Do NOT reset if already active.
                             try
                             {
-                                lock (displayTimerLock)
+                                bool shouldStartWorker = false;
+                                DateTime workerDeadline = DateTime.MinValue;
+                                lock (stateLock)
                                 {
                                     if (!displayTimerActive)
                                     {
                                         displayTimerActive = true;
                                         displayDeadline = DateTime.UtcNow.AddSeconds(minSeconds);
                                         logger?.Info($"Display timer set (deadline={displayDeadline:O}, displayLimitSeconds={minSeconds})");
+                                        workerDeadline = displayDeadline.Value;
+                                        shouldStartWorker = true;
+                                    }
+                                }
 
-                                        var workerDeadline = displayDeadline.Value;
-                                        Task.Run(async () =>
+                                if (shouldStartWorker)
+                                {
+                                    Task.Run(async () =>
+                                    {
+                                        try
                                         {
+                                            var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
+                                            if (waitMs > 0) await Task.Delay(waitMs).ConfigureAwait(false);
+
+                                            logger?.Info($"Display timer worker awakened (deadline={workerDeadline:O})");
+
+                                            var monitoringStart = DateTime.UtcNow;
+
                                             try
                                             {
-                                                var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
-                                                if (waitMs > 0) await Task.Delay(waitMs).ConfigureAwait(false);
-
-                                                logger?.Info($"Display timer worker awakened (deadline={workerDeadline:O})");
-
-                                                var monitoringStart = DateTime.UtcNow;
-
-                                                try
+                                                if (NativeMethods.GetCursorPos(out var ipos))
                                                 {
-                                                    if (NativeMethods.GetCursorPos(out var ipos))
-                                                    {
-                                                        Program._lastCursorPos = ipos;
-                                                        Program._lastMouseTick = (uint)Environment.TickCount;
-                                                        if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Mouse at {ipos.X},{ipos.Y}");
-                                                    }
+                                                    Program._lastCursorPos = ipos;
+                                                    Program._lastMouseTick = (uint)Environment.TickCount;
+                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Mouse at {ipos.X},{ipos.Y}");
                                                 }
-                                                catch { }
-
-                                                try
-                                                {
-                                                    for (int vk = 0x01; vk <= 0xFE; vk++)
-                                                    {
-                                                        try
-                                                        {
-                                                            short s = NativeMethods.GetAsyncKeyState(vk);
-                                                            bool transition = (s & 0x0001) != 0;
-                                                            if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
-                                                            {
-                                                                Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                                if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected vk={vk}");
-                                                                break;
-                                                            }
-                                                        }
-                                                        catch { }
-                                                    }
-                                                }
-                                                catch { }
-
-                                                try
-                                                {
-                                                    while (true)
-                                                    {
-                                                        try { Thread.Sleep(200); } catch { }
-
-                                                        try
-                                                        {
-                                                            if (NativeMethods.GetCursorPos(out var cur))
-                                                            {
-                                                                if (cur.X != Program._lastCursorPos.X || cur.Y != Program._lastCursorPos.Y)
-                                                                {
-                                                                    Program._lastCursorPos = cur;
-                                                                    Program._lastMouseTick = (uint)Environment.TickCount;
-                                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected mouse movement during monitoring: {cur.X},{cur.Y}");
-                                                                }
-                                                            }
-                                                        }
-                                                        catch { }
-
-                                                        try
-                                                        {
-                                                            for (int vk = 0x01; vk <= 0xFE; vk++)
-                                                            {
-                                                                try
-                                                                {
-                                                                    short s = NativeMethods.GetAsyncKeyState(vk);
-                                                                    bool transition = (s & 0x0001) != 0;
-                                                                    if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
-                                                                    {
-                                                                        Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                                        if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected keyboard activity during monitoring (vk={vk})");
-                                                                        break;
-                                                                    }
-                                                                }
-                                                                catch { }
-                                                            }
-                                                        }
-                                                        catch { }
-
-                                                        try
-                                                        {
-                                                            var monitorElapsedMS = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
-                                                            if (shortcutKeyMaxWaitMS > 0 && monitorElapsedMS >= shortcutKeyMaxWaitMS)
-                                                            {
-                                                                logger?.Info($"DisplayTimerWorker: monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); proceeding to send shortcut");
-                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
-                                                                {
-                                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                                    logger?.Info("Notification Center toggled (display-timer: timeout)");
-                                                                }
-                                                                else
-                                                                {
-                                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                                    logger?.Info("Action Center toggled (display-timer: timeout)");
-                                                                }
-
-                                                                break;
-                                                            }
-
-                                                            uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
-                                                            if (elapsedSinceLastInput >= (uint)shortcutKeyWaitIdleMS)
-                                                            {
-                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
-                                                                {
-                                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                                    logger?.Info("Notification Center toggled (display-timer)");
-                                                                }
-                                                                else
-                                                                {
-                                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                                    logger?.Info("Action Center toggled (display-timer)");
-                                                                }
-                                                                break;
-                                                            }
-                                                        }
-                                                        catch { }
-                                                    }
-                                                }
-                                                catch (ThreadInterruptedException) { }
                                             }
-                                            catch (Exception ex)
+                                            catch { }
+
+                                            try
                                             {
-                                                try { logger?.Error($"DisplayTimerWorker failed: {ex.Message}"); } catch { }
-                                            }
-                                            finally
-                                            {
-                                                try { lock (displayTimerLock) { displayTimerActive = false; displayDeadline = null; } } catch { }
-                                                try
+                                                for (int vk = 0x01; vk <= 0xFE; vk++)
                                                 {
-                                                    lock (displayTimerLock)
+                                                    try
                                                     {
-                                                        try { tracked.Clear(); groups.Clear(); } catch { }
+                                                        short s = NativeMethods.GetAsyncKeyState(vk);
+                                                        bool transition = (s & 0x0001) != 0;
+                                                        if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
+                                                        {
+                                                            Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                                            if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected vk={vk}");
+                                                            break;
+                                                        }
                                                     }
+                                                    catch { }
                                                 }
-                                                catch { }
-                                                try { logger?.Info("Display timer worker completed and cleared tracked/groups"); } catch { }
                                             }
-                                        });
-                                    }
+                                            catch { }
+
+                                            try
+                                            {
+                                                while (true)
+                                                {
+                                                    try { Thread.Sleep(200); } catch { }
+
+                                                    try
+                                                    {
+                                                        if (NativeMethods.GetCursorPos(out var cur))
+                                                        {
+                                                            if (cur.X != Program._lastCursorPos.X || cur.Y != Program._lastCursorPos.Y)
+                                                            {
+                                                                Program._lastCursorPos = cur;
+                                                                Program._lastMouseTick = (uint)Environment.TickCount;
+                                                                if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected mouse movement during monitoring: {cur.X},{cur.Y}");
+                                                            }
+                                                        }
+                                                    }
+                                                    catch { }
+
+                                                    try
+                                                    {
+                                                        for (int vk = 0x01; vk <= 0xFE; vk++)
+                                                        {
+                                                            try
+                                                            {
+                                                                short s = NativeMethods.GetAsyncKeyState(vk);
+                                                                bool transition = (s & 0x0001) != 0;
+                                                                if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
+                                                                {
+                                                                    Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected keyboard activity during monitoring (vk={vk})");
+                                                                    break;
+                                                                }
+                                                            }
+                                                            catch { }
+                                                        }
+                                                    }
+                                                    catch { }
+
+                                                    try
+                                                    {
+                                                        var monitorElapsedMS = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
+                                                        if (shortcutKeyMaxWaitMS > 0 && monitorElapsedMS >= shortcutKeyMaxWaitMS)
+                                                        {
+                                                            logger?.Info($"DisplayTimerWorker: monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); proceeding to send shortcut");
+                                                            if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                            {
+                                                                ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
+                                                                logger?.Info("Notification Center toggled (display-timer: timeout)");
+                                                            }
+                                                            else
+                                                            {
+                                                                ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
+                                                                logger?.Info("Action Center toggled (display-timer: timeout)");
+                                                            }
+
+                                                            break;
+                                                        }
+
+                                                        uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
+                                                        if (elapsedSinceLastInput >= (uint)shortcutKeyWaitIdleMS)
+                                                        {
+                                                            if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                            {
+                                                                ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
+                                                                logger?.Info("Notification Center toggled (display-timer)");
+                                                            }
+                                                            else
+                                                            {
+                                                                ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
+                                                                logger?.Info("Action Center toggled (display-timer)");
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+                                                    catch { }
+                                                }
+                                            }
+                                            catch (ThreadInterruptedException) { }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            try { logger?.Error($"DisplayTimerWorker failed: {ex.Message}"); } catch { }
+                                        }
+                                        finally
+                                        {
+                                            try { lock (stateLock) { displayTimerActive = false; displayDeadline = null; } } catch { }
+                                            try
+                                            {
+                                                lock (stateLock)
+                                                {
+                                                    try { tracked.Clear(); groups.Clear(); } catch { }
+                                                }
+                                            }
+                                            catch { }
+                                            try { logger?.Info("Display timer worker completed and cleared tracked/groups"); } catch { }
+                                        }
+                                    });
                                 }
                             }
                             catch { }
