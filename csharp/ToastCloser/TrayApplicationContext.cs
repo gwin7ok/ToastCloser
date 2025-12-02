@@ -232,6 +232,18 @@ namespace ToastCloser
 
         private void ExitApplication()
         {
+            // Signal the RunLoop to stop and wait briefly for it to finish.
+            try { Program.ShutdownCts?.Cancel(); } catch { }
+            try
+            {
+                var t = Program.RunLoopThread;
+                if (t != null && t.IsAlive)
+                {
+                    try { t.Join(5000); } catch { }
+                }
+            }
+            catch { }
+
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             Application.Exit();

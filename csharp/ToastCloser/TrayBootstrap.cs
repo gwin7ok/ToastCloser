@@ -55,17 +55,26 @@ namespace ToastCloser
                 }
                 else
                 {
-                    Task.Run(() =>
+                    try
                     {
-                        try
+                        var thread = new System.Threading.Thread(() =>
                         {
-                            Program.Main(new string[] { "--background-service" });
-                        }
-                        catch (Exception ex)
-                        {
-                            try { System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_background_exception_{System.DateTime.Now:yyyyMMddHHmmss}.txt"), ex.ToString()); } catch { }
-                        }
-                    });
+                            try
+                            {
+                                Program.RunLoopThread = System.Threading.Thread.CurrentThread;
+                                Program.Main(new string[] { "--background-service" });
+                            }
+                            catch (Exception ex)
+                            {
+                                try { System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_background_exception_{System.DateTime.Now:yyyyMMddHHmmss}.txt"), ex.ToString()); } catch { }
+                            }
+                        });
+                        thread.IsBackground = false; // keep process alive until thread completes
+                        thread.Name = "ToastCloser.RunLoop";
+                        thread.Start();
+                        Program.RunLoopThread = thread;
+                    }
+                    catch { }
                 }
             }
             catch { }

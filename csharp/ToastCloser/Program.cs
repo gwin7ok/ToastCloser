@@ -22,6 +22,10 @@ namespace ToastCloser
         internal static uint _lastMouseTick = 0;
         internal static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0,0);
 
+        // Shared shutdown token source and the thread running the RunLoop.
+        public static System.Threading.CancellationTokenSource? ShutdownCts = null;
+        public static System.Threading.Thread? RunLoopThread = null;
+
             // Static constructor: runs before Main and before the type is JIT-compiled.
             // Register assembly resolve handlers here so any assembly load during JIT
             // or early startup can be resolved from the `dll\` folder.
@@ -29,6 +33,12 @@ namespace ToastCloser
 
         public static void Main(string[] args)
         {
+                // Record the thread running the RunLoop so callers can wait for it on shutdown.
+                try { RunLoopThread = System.Threading.Thread.CurrentThread; } catch { }
+
+                // Ensure there is a shared ShutdownCts that UI can cancel.
+                try { if (ShutdownCts == null) ShutdownCts = new System.Threading.CancellationTokenSource(); } catch { }
+
             var cfg = Config.Load() ?? new Config();
             string exeFolder = string.Empty;
             try { exeFolder = System.IO.Path.GetDirectoryName(System.Environment.GetCommandLineArgs()?.FirstOrDefault() ?? string.Empty) ?? string.Empty; } catch { }
@@ -69,7 +79,8 @@ namespace ToastCloser
             // so the `preserveHistory` toggle is unnecessary and therefore removed.
             try { Logger.Instance?.Info($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} shortcutKeyMode={shortcutKeyMode} wmCloseOnly={wmCloseOnly} detectionTimeoutMS={detectionTimeoutMS} winShortcutKeyIntervalMS={winShortcutKeyIntervalMS})"); } catch { }
 
-            using var cts = new CancellationTokenSource();
+            // Use the shared ShutdownCts so other components (UI) can trigger cancellation.
+            var cts = ShutdownCts ?? new System.Threading.CancellationTokenSource();
             // hook standard shutdown signals to cancel RunLoop so it can exit cleanly
             AppDomain.CurrentDomain.ProcessExit += (s, e) => { try { Logger.Instance?.Info("ProcessExit received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } };
             Console.CancelKeyPress += (s, e) => { try { Logger.Instance?.Info("CancelKeyPress received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } };
@@ -87,12 +98,20 @@ namespace ToastCloser
             }
             catch { }
 
-            UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
-
-            try { Logger.Instance?.Info("RunLoop exited, performing shutdown cleanup"); } catch { }
-            // brief pause to ensure final log lines are flushed to disk before disposing
-            try { System.Threading.Thread.Sleep(150); } catch { }
-            try { Logger.Instance?.Dispose(); } catch { }
+            try
+            {
+                UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
+            }
+            finally
+            {
+                try { Logger.Instance?.Info("RunLoop exited, performing shutdown cleanup"); } catch { }
+                // brief pause to ensure final log lines are flushed to disk before disposing
+                try { System.Threading.Thread.Sleep(150); } catch { }
+                try { Logger.Instance?.Dispose(); } catch { }
+                try { RunLoopThread = null; } catch { }
+                try { ShutdownCts?.Dispose(); } catch { }
+                ShutdownCts = null;
+            }
         }
 
         static string CleanNotificationName(string rawName, string contentSummary)
