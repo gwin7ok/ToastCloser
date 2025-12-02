@@ -50,7 +50,7 @@ namespace ToastCloser
                     }
                     catch (Exception ex)
                     {
-                        try { System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_inline_exception_{System.DateTime.UtcNow:yyyyMMddHHmmss}.txt"), ex.ToString()); } catch { }
+                        try { System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_inline_exception_{System.DateTime.Now:yyyyMMddHHmmss}.txt"), ex.ToString()); } catch { }
                     }
                 }
                 else
@@ -63,7 +63,7 @@ namespace ToastCloser
                         }
                         catch (Exception ex)
                         {
-                            try { System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_background_exception_{System.DateTime.UtcNow:yyyyMMddHHmmss}.txt"), ex.ToString()); } catch { }
+                            try { System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_background_exception_{System.DateTime.Now:yyyyMMddHHmmss}.txt"), ex.ToString()); } catch { }
                         }
                     });
                 }

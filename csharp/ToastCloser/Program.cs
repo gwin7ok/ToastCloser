@@ -306,11 +306,11 @@ namespace ToastCloser
                 _writer = new System.IO.StreamWriter(fs) { AutoFlush = true };
                 try
                 {
-                    var diagOpen = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_logger_open_{System.DateTime.UtcNow:yyyyMMddHHmmss}_pid{System.Diagnostics.Process.GetCurrentProcess().Id}.txt");
+                    var diagOpen = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"toastcloser_logger_open_{System.DateTime.Now:yyyyMMddHHmmss}_pid{System.Diagnostics.Process.GetCurrentProcess().Id}.txt");
                     var exists = System.IO.File.Exists(path);
                     long len = -1;
                     try { len = exists ? new System.IO.FileInfo(path).Length : -1; } catch { }
-                    var text = $"utc={System.DateTime.UtcNow:O}\r\nlogPath={path}\r\nfileExists={exists}\r\nlength={len}\r\n";
+                    var text = $"local={System.DateTime.Now:O}\r\nlogPath={path}\r\nfileExists={exists}\r\nlength={len}\r\n";
                     try { System.IO.File.WriteAllText(diagOpen, text); } catch { }
                 }
                 catch { }
