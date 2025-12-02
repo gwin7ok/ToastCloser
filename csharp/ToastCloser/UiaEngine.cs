@@ -833,13 +833,19 @@ namespace ToastCloser
                     }
 
                     var presentKeys = new HashSet<string>(found.Select(f => MakeKey(f)));
-                    foreach (var k in tracked.Keys.ToList())
+                    // Immediately remove tracked entries that are no longer present.
+                    // Protect with stateLock to avoid races with the display-timer worker.
+                    var keysSnapshot = tracked.Keys.ToList();
+                    lock (stateLock)
                     {
-                        if (!presentKeys.Contains(k) && (DateTime.UtcNow - tracked[k].FirstSeen).TotalSeconds > 5.0)
+                        foreach (var k in keysSnapshot)
                         {
-                            var gid = tracked[k].GroupId;
-                            tracked.Remove(k);
-                            if (!tracked.Values.Any(t => t.GroupId == gid)) groups.Remove(gid);
+                            if (!presentKeys.Contains(k))
+                            {
+                                var gid = tracked[k].GroupId;
+                                tracked.Remove(k);
+                                if (!tracked.Values.Any(t => t.GroupId == gid)) groups.Remove(gid);
+                            }
                         }
                     }
                 }
