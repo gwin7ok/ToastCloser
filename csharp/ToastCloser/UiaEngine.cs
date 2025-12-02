@@ -925,6 +925,21 @@ namespace ToastCloser
                 try { ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(poll)); } catch { }
                 if (ct.IsCancellationRequested) break;
             }
+
+            // Shutdown: wait briefly for any display-timer worker tasks to finish
+            try
+            {
+                try { logger?.Info("RunLoop exiting: waiting for worker tasks to complete"); } catch { }
+                List<Task> tasksCopy;
+                lock (workerTasksLock) { tasksCopy = workerTasks.ToList(); }
+                if (tasksCopy.Count > 0)
+                {
+                    try { Task.WaitAll(tasksCopy.ToArray(), TimeSpan.FromSeconds(5)); } catch { }
+                }
+            }
+            catch { }
+
+            try { lock (automationLock) { try { automation?.Dispose(); } catch { } automation = null; desktop = null; cf = null; } } catch { }
         }
 
         static string CleanNotificationName(string rawName, string contentSummary)

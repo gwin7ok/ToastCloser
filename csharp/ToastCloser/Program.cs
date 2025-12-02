@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 // FlaUI types are contained in UiaEngine.cs; keep Program.cs free of direct FlaUI references.
 using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using System.Drawing;
 // using FlaUI.UIA3; // not referenced here
 
@@ -63,7 +64,16 @@ namespace ToastCloser
             // Emit startup INFO (match v1.0.0 behavior)
             try { Logger.Instance?.Info($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} preserveHistory={preserveHistory} shortcutKeyMode={shortcutKeyMode} wmCloseOnly={wmCloseOnly} detectionTimeoutMS={detectionTimeoutMS} winShortcutKeyIntervalMS={winShortcutKeyIntervalMS})"); } catch { }
 
-            UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, preserveHistory, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly);
+            using var cts = new CancellationTokenSource();
+            // hook standard shutdown signals to cancel RunLoop so it can exit cleanly
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => { try { Logger.Instance?.Info("ProcessExit received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } };
+            Console.CancelKeyPress += (s, e) => { try { Logger.Instance?.Info("CancelKeyPress received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } };
+            try { SystemEvents.SessionEnding += (s, e) => { try { Logger.Instance?.Info("SessionEnding received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } }; } catch { }
+
+            UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, preserveHistory, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
+
+            try { Logger.Instance?.Info("RunLoop exited, performing shutdown cleanup"); } catch { }
+            try { Logger.Instance?.Dispose(); } catch { }
         }
 
         static string CleanNotificationName(string rawName, string contentSummary)
