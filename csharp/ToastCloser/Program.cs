@@ -73,6 +73,8 @@ namespace ToastCloser
             UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, preserveHistory, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
 
             try { Logger.Instance?.Info("RunLoop exited, performing shutdown cleanup"); } catch { }
+            // brief pause to ensure final log lines are flushed to disk before disposing
+            try { System.Threading.Thread.Sleep(150); } catch { }
             try { Logger.Instance?.Dispose(); } catch { }
         }
 

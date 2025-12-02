@@ -46,26 +46,26 @@ namespace ToastCloser
                 {
                     try
                     {
-                        try { automation?.Dispose(); } catch { }
+                        try { automation?.Dispose(); } catch (Exception ex) { try { logger?.Debug("InitializeAutomation dispose failed: " + ex.Message); } catch { } }
                         automation = new UIA3Automation();
                         cf = new ConditionFactory(new UIA3PropertyLibrary());
                         desktop = automation?.GetDesktop();
                     }
-                    catch { desktop = automation?.GetDesktop(); }
+                    catch (Exception ex) { try { logger?.Error("InitializeAutomation failed: " + ex.Message); } catch { } desktop = automation?.GetDesktop(); }
                 }
             };
 
             InitializeAutomation();
 
             // initialize cursor position
-            try { NativeMethods.GetCursorPos(out Program._lastCursorPos); } catch { }
+            try { NativeMethods.GetCursorPos(out Program._lastCursorPos); } catch (Exception ex) { try { logger?.Debug("GetCursorPos failed during init: " + ex.Message); } catch { } }
 
             // Local copy of config flags used inside the loop
             var localCfg = cfg ?? new Config();
             // Enforce timer-only behavior: disable legacy preserve-history fallback
             if (preserveHistory)
             {
-                try { logger?.Info("preserveHistory flag overridden: running display-timer-only mode"); } catch { }
+                try { logger?.Info("preserveHistory flag overridden: running display-timer-only mode"); } catch (Exception ex) { try { logger?.Debug("Log preserveHistory info failed: " + ex.Message); } catch { } }
             }
             preserveHistory = false;
             bool _monitoringStarted = false;
@@ -219,7 +219,7 @@ namespace ToastCloser
                         else
                         {
                             logger?.Debug($"UIA reinitialization timed out after {detectionTimeoutMS}ms");
-                            try { Thread.Sleep(detectionTimeoutMS); } catch { }
+                            try { Thread.Sleep(detectionTimeoutMS); } catch (Exception ex) { try { logger?.Debug("Thread.Sleep during reinit wait failed: " + ex.Message); } catch { } }
                         }
                     }
 
@@ -247,7 +247,7 @@ namespace ToastCloser
                                         tracked.Remove(k);
                                         if (!tracked.Values.Any(t => t.GroupId == gid)) groups.Remove(gid);
                                     }
-                                    catch { }
+                                    catch (Exception ex) { try { logger?.Debug("Error removing tracked key during cleanup: " + ex.Message); } catch { } }
                                 }
                             }
                             logger?.Info("No toasts present: cleaned tracked/groups");
