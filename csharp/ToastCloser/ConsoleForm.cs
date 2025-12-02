@@ -514,6 +514,16 @@ namespace ToastCloser
                 var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
                 if (!Directory.Exists(logsDir)) return;
 
+                // Wait a short time for logger rotation to complete so we don't race with startup archive move.
+                try
+                {
+                    if (!Program.Logger.WaitUntilReady(3000))
+                    {
+                        try { Program.Logger.Instance?.Debug("ConsoleForm.LoadPastLogs: logger not ready within 3s, proceeding to read logs (may race with rotation)"); } catch { }
+                    }
+                }
+                catch { }
+
                 var files = Directory.GetFiles(logsDir, "auto_closer*").OrderBy(f => File.GetCreationTime(f)).ToArray();
                 var combined = new System.Collections.Generic.List<string>();
                 foreach (var f in files)

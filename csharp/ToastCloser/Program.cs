@@ -75,6 +75,18 @@ namespace ToastCloser
             Console.CancelKeyPress += (s, e) => { try { Logger.Instance?.Info("CancelKeyPress received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } };
             try { SystemEvents.SessionEnding += (s, e) => { try { Logger.Instance?.Info("SessionEnding received: cancelling RunLoop"); } catch { } try { cts.Cancel(); } catch { } }; } catch { }
 
+            // Wait briefly for logger rotation/open to complete so startup archive processing
+            // does not race with other components that read the log files. If logger is not
+            // ready within the timeout, continue but log a warning.
+            try
+            {
+                if (!Program.Logger.WaitUntilReady(5000))
+                {
+                    try { Logger.Instance?.Warn("Logger initialization/rotation did not complete within 5s; continuing startup anyway"); } catch { }
+                }
+            }
+            catch { }
+
             UiaEngine.RunLoop(cfg, exeFolder, logsDir, minSeconds, poll, detectionTimeoutMS, detectOnly, shortcutKeyWaitIdleMS, shortcutKeyMaxWaitMS, winShortcutKeyIntervalMS, shortcutKeyMode, wmCloseOnly, cts.Token);
 
             try { Logger.Instance?.Info("RunLoop exited, performing shutdown cleanup"); } catch { }
@@ -264,6 +276,16 @@ namespace ToastCloser
 
         public class Logger : IDisposable
         {
+            // Set when logger construction and rotation handling completed and writer is open.
+            private static readonly System.Threading.ManualResetEventSlim _ready = new System.Threading.ManualResetEventSlim(false);
+            public static bool IsReady => _ready.IsSet;
+            /// <summary>
+            /// Wait until the logger is ready (rotation and open completed) or timeout elapses.
+            /// </summary>
+            public static bool WaitUntilReady(int millisecondsTimeout)
+            {
+                try { return _ready.Wait(millisecondsTimeout); } catch { return false; }
+            }
             public static Logger? Instance { get; set; }
             public event Action<string>? OnLogLine;
             // When true, log file lines will also be written to Console (same format)
@@ -331,7 +353,9 @@ namespace ToastCloser
                     try { System.IO.File.WriteAllText(diagOpen, text); } catch { }
                 }
                 catch { }
+                // Signal ready after writer is created and initial INFO header written.
                 Info($"===== log start: {DateTime.Now:yyyy/MM/dd HH:mm:ss} =====");
+                try { _ready.Set(); } catch { }
             }
             public void Info(string m) => Write("INFO", m);
             public void Debug(string m) => Write("DEBUG", m);
