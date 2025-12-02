@@ -267,7 +267,9 @@ namespace ToastCloser
                     foreach (var w in found)
                     {
                         string key = MakeKey(w);
-                        if (!tracked.ContainsKey(key))
+                        bool isNewKey = false;
+                        lock (stateLock) { isNewKey = !tracked.ContainsKey(key); }
+                        if (isNewKey)
                         {
                             int assignedGroup = -1;
                             var now = DateTime.UtcNow;
@@ -551,15 +553,21 @@ namespace ToastCloser
                             continue;
                         }
 
-                        var groupId = tracked[key].GroupId;
-                        var groupStart = groups.ContainsKey(groupId) ? groups[groupId] : tracked[key].FirstSeen;
+                        int groupId;
+                        DateTime groupStart;
+                        TrackedInfo stored;
+                        lock (stateLock)
+                        {
+                            groupId = tracked[key].GroupId;
+                            groupStart = groups.ContainsKey(groupId) ? groups[groupId] : tracked[key].FirstSeen;
+                            stored = tracked[key];
+                        }
                         var elapsed = (DateTime.UtcNow - groupStart).TotalSeconds;
                         var msgElapsed = $"key={key} | group={groupId} | elapsed={elapsed:0.0}s";
                         logger?.Debug(() => msgElapsed);
 
                         try
                         {
-                            var stored = tracked[key];
                             var methodStored = stored.Method ?? "priority";
                             var pidStored = stored.Pid;
                             var nameStored = stored.ShortName ?? string.Empty;
@@ -749,26 +757,32 @@ namespace ToastCloser
                                                 logger?.Info($"key={key} Action Center toggled (preserve-history)");
                                             }
 
-                                            foreach (var d in dedup)
+                                            lock (stateLock)
                                             {
-                                                try
+                                                foreach (var d in dedup)
                                                 {
-                                                    if (tracked.ContainsKey(d.key))
+                                                    try
                                                     {
-                                                        tracked.Remove(d.key);
-                                                        var cbMsg = $"key={d.key} ClosedBy=PreserveHistory | name=\"{d.name}\"";
-                                                        logger?.Info(cbMsg);
+                                                        if (tracked.ContainsKey(d.key))
+                                                        {
+                                                            tracked.Remove(d.key);
+                                                            var cbMsg = $"key={d.key} ClosedBy=PreserveHistory | name=\"{d.name}\"";
+                                                            logger?.Info(cbMsg);
+                                                        }
                                                     }
+                                                    catch { }
                                                 }
-                                                catch { }
                                             }
                                             actionCenterToggled = true;
                                             closed = true;
                                         }
-                                        else
+                                            else
                                         {
                                             logger?.Info($"key={key} Action Center already toggled this scan; assuming toast moved to history");
-                                            if (tracked.ContainsKey(key)) tracked.Remove(key);
+                                            lock (stateLock)
+                                            {
+                                                if (tracked.ContainsKey(key)) tracked.Remove(key);
+                                            }
                                             closed = true;
                                         }
                                     }
@@ -870,8 +884,11 @@ namespace ToastCloser
 
                             if (closed)
                             {
-                                tracked.Remove(key);
-                                if (!tracked.Values.Any(t => t.GroupId == groupId)) { groups.Remove(groupId); }
+                                lock (stateLock)
+                                {
+                                    tracked.Remove(key);
+                                    if (!tracked.Values.Any(t => t.GroupId == groupId)) { groups.Remove(groupId); }
+                                }
                             }
                         }
                     }
@@ -879,9 +896,9 @@ namespace ToastCloser
                     var presentKeys = new HashSet<string>(found.Select(f => MakeKey(f)));
                     // Immediately remove tracked entries that are no longer present.
                     // Protect with stateLock to avoid races with the display-timer worker.
-                    var keysSnapshot = tracked.Keys.ToList();
                     lock (stateLock)
                     {
+                        var keysSnapshot = tracked.Keys.ToList();
                         foreach (var k in keysSnapshot)
                         {
                             if (!presentKeys.Contains(k))
