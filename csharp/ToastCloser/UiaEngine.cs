@@ -66,15 +66,21 @@ namespace ToastCloser
 
             // Local copy of config flags used inside the loop
             var localCfg = cfg ?? new Config();
-            // preserveHistory feature removed: operate in timer-only mode.
-            bool _monitoringStarted = false;
+            // NOTE: The historical `preserveHistory` flag has been removed.
+            // Background / rationale:
+            // - 以前は通知を閉じる手段が2通りありました:
+            //   1) ショートカットキーの送信で閉じる方法 (ショートカット送信は通知を履歴に残す動作になるため「履歴を残す」)
+            //   2) UIA/WindowPattern 等で通知ウィンドウを直接閉じる方法 (履歴には残らない)
+            // - 現在の実装では (1) ショートカット送信 のみを使用しており、(2) の直接閉鎖は削除されています。
+            // - したがって `preserveHistory` フラグは意味を成さなくなり、コードから取り除いています。
+            // - 将来的に履歴を残す挙動を復活させる計画は無く、もし要望があれば別機能として慎重に再導入してください。
 
             while (true)
             {
                 if (ct.IsCancellationRequested) break;
                 try
                 {
-                    // preserveHistory removed; no legacy monitoring fallback
+                    // preserveHistory removed; no legacy monitoring fallback (see note above)
 
                     lock (automationLock)
                     {
@@ -257,7 +263,6 @@ namespace ToastCloser
 
                     // Re-iterate through found for existing processing (we will process again below)
                     var postedHwnds = new HashSet<long>();
-                    var actionCenterToggled = false;
                     foreach (var w in found)
                     {
                         string key = MakeKey(w);

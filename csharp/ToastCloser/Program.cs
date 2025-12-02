@@ -61,6 +61,12 @@ namespace ToastCloser
             bool wmCloseOnly = false;
 
             // Emit startup INFO (match v1.0.0 behavior)
+            // NOTE: The legacy `preserveHistory` flag was removed from the codebase.
+            // Historically the flag selected between two close strategies:
+            //  - shortcut-key send (closes the toast but leaves it in Action Center / notification history)
+            //  - direct UIA/WindowPattern close (closes without leaving history)
+            // Current behavior: only the shortcut-key send method is used (history is preserved by design),
+            // so the `preserveHistory` toggle is unnecessary and therefore removed.
             try { Logger.Instance?.Info($"ToastCloser starting (displayLimitSeconds={minSeconds} pollIntervalSeconds={poll} detectOnly={detectOnly} shortcutKeyMode={shortcutKeyMode} wmCloseOnly={wmCloseOnly} detectionTimeoutMS={detectionTimeoutMS} winShortcutKeyIntervalMS={winShortcutKeyIntervalMS})"); } catch { }
 
             using var cts = new CancellationTokenSource();
