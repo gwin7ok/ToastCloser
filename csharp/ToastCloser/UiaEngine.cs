@@ -25,7 +25,6 @@ namespace ToastCloser
             // and when it elapses, a background worker will perform the idle-check -> send-shortcut flow.
             DateTime? displayDeadline = null;
             bool displayTimerActive = false;
-            bool displayClearRequested = false;
             var displayTimerLock = new object();
 
             // UIA automation instances are reinitializable on timeout. Keep them in mutable variables
@@ -56,6 +55,12 @@ namespace ToastCloser
 
             // Local copy of config flags used inside the loop
             var localCfg = cfg ?? new Config();
+            // Enforce timer-only behavior: disable legacy preserve-history fallback
+            if (preserveHistory)
+            {
+                try { logger?.Info("preserveHistory flag overridden: running display-timer-only mode"); } catch { }
+            }
+            preserveHistory = false;
             bool _monitoringStarted = false;
 
             while (true)
@@ -64,151 +69,7 @@ namespace ToastCloser
                 {
                     if (preserveHistory && !_monitoringStarted && tracked.Count > 0)
                     {
-                        // monitoring logic copied from Program.Main
-                        try
-                        {
-                            int displayLimitMS = (int)(minSeconds * 1000);
-                            int monitorThresholdMS = Math.Max(0, displayLimitMS - shortcutKeyWaitIdleMS);
-                            var oldest = tracked.Values.OrderBy(t => t.FirstSeen).FirstOrDefault();
-                            if (oldest != null)
-                            {
-                                var oldestElapsedMS = (int)(DateTime.UtcNow - oldest.FirstSeen).TotalMilliseconds;
-                                if (oldestElapsedMS >= monitorThresholdMS)
-                                {
-                                    _monitoringStarted = true;
-                                    var monitoringStart = DateTime.UtcNow;
-                                    logger?.Info($"Started preserve-history monitoring (oldestElapsedMS={oldestElapsedMS} monitorThresholdMS={monitorThresholdMS} maxMonitorMS={shortcutKeyMaxWaitMS})");
-
-                                    try
-                                    {
-                                        if (NativeMethods.GetCursorPos(out var ipos))
-                                        {
-                                            Program._lastCursorPos = ipos;
-                                            Program._lastMouseTick = (uint)Environment.TickCount;
-                                            if (Program.Logger.IsDebugEnabled) logger?.Debug($"ImmediatePoll: Mouse at {ipos.X},{ipos.Y}");
-                                        }
-                                    }
-                                    catch { }
-
-                                    try
-                                    {
-                                        for (int vk = 0x01; vk <= 0xFE; vk++)
-                                        {
-                                            try
-                                            {
-                                                short s = NativeMethods.GetAsyncKeyState(vk);
-                                                bool transition = (s & 0x0001) != 0;
-                                                if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
-                                                {
-                                                    Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"ImmediatePoll: Detected vk={vk}");
-                                                    break;
-                                                }
-                                            }
-                                            catch { }
-                                        }
-                                    }
-                                    catch { }
-
-                                    while (true)
-                                    {
-                                        try { Thread.Sleep(200); } catch { }
-
-                                        try
-                                        {
-                                            if (NativeMethods.GetCursorPos(out var cur))
-                                            {
-                                                if (cur.X != Program._lastCursorPos.X || cur.Y != Program._lastCursorPos.Y)
-                                                {
-                                                    Program._lastCursorPos = cur;
-                                                    Program._lastMouseTick = (uint)Environment.TickCount;
-                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"Detected mouse movement during monitoring: {cur.X},{cur.Y}");
-                                                }
-                                            }
-                                        }
-                                        catch { }
-
-                                        try
-                                        {
-                                            for (int vk = 0x01; vk <= 0xFE; vk++)
-                                            {
-                                                try
-                                                {
-                                                    short s = NativeMethods.GetAsyncKeyState(vk);
-                                                    bool transition = (s & 0x0001) != 0;
-                                                    if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
-                                                    {
-                                                        Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                        if (Program.Logger.IsDebugEnabled) logger?.Debug($"Detected keyboard activity during monitoring (vk={vk})");
-                                                        break;
-                                                    }
-                                                }
-                                                catch { }
-                                            }
-                                        }
-                                        catch { }
-
-                                        try
-                                        {
-                                            var monitorElapsedMS = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
-                                            if (shortcutKeyMaxWaitMS > 0 && monitorElapsedMS >= shortcutKeyMaxWaitMS)
-                                            {
-                                                logger?.Info($"Preserve-history monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); proceeding to send shortcut");
-                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
-                                                {
-                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                    logger?.Info("Notification Center toggled (preserve-history: timeout)");
-                                                }
-                                                else
-                                                {
-                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                    logger?.Info("Action Center toggled (preserve-history: timeout)");
-                                                }
-                                                try
-                                                {
-                                                    var dedup = tracked.Keys.ToList();
-                                                    foreach (var k in dedup) { try { tracked.Remove(k); } catch { } }
-                                                    groups.Clear();
-                                                }
-                                                catch { }
-                                                _monitoringStarted = false;
-                                                break;
-                                            }
-
-                                            uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
-                                            if (elapsedSinceLastInput >= (uint)shortcutKeyWaitIdleMS)
-                                            {
-                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
-                                                {
-                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                    logger?.Info("Notification Center toggled (preserve-history)");
-                                                }
-                                                else
-                                                {
-                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                    logger?.Info("Action Center toggled (preserve-history)");
-                                                }
-
-                                                try
-                                                {
-                                                    var dedup = tracked.Keys.ToList();
-                                                    foreach (var k in dedup) { try { tracked.Remove(k); } catch { } }
-                                                    groups.Clear();
-                                                }
-                                                catch { }
-
-                                                _monitoringStarted = false;
-                                                break;
-                                            }
-                                        }
-                                        catch { }
-                                    }
-
-                                    try { Thread.Sleep(TimeSpan.FromSeconds(poll)); } catch { }
-                                }
-                            }
-                        }
-                        catch { }
+                        // preserve-history fallback disabled (timer-only mode)
                     }
 
                     lock (automationLock)
@@ -573,9 +434,16 @@ namespace ToastCloser
                                             }
                                             finally
                                             {
-                                                try { displayClearRequested = true; } catch { }
                                                 try { lock (displayTimerLock) { displayTimerActive = false; displayDeadline = null; } } catch { }
-                                                try { logger?.Info("Display timer worker completed and requested tracked clear"); } catch { }
+                                                try
+                                                {
+                                                    lock (displayTimerLock)
+                                                    {
+                                                        try { tracked.Clear(); groups.Clear(); } catch { }
+                                                    }
+                                                }
+                                                catch { }
+                                                try { logger?.Info("Display timer worker completed and cleared tracked/groups"); } catch { }
                                             }
                                         });
                                     }
