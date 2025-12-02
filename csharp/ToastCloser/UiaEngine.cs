@@ -226,6 +226,32 @@ namespace ToastCloser
                         // No toasts found by CoreWindow-based search; end scan
                         logger?.Info($"No toasts found by CoreWindow-based search; ending search for this scan. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                         logger?.Info($"Toast search: end (duration={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms) found=0");
+
+                        // Immediately remove tracked entries that are no longer present
+                        // so any display-timer worker won't send for cleared toasts.
+                        try
+                        {
+                            lock (stateLock)
+                            {
+                                var keysToRemove = tracked.Keys.ToList();
+                                foreach (var k in keysToRemove)
+                                {
+                                    try
+                                    {
+                                        var gid = tracked[k].GroupId;
+                                        tracked.Remove(k);
+                                        if (!tracked.Values.Any(t => t.GroupId == gid)) groups.Remove(gid);
+                                    }
+                                    catch { }
+                                }
+                            }
+                            logger?.Info("No toasts present: cleaned tracked/groups");
+                        }
+                        catch (Exception ex)
+                        {
+                            try { logger?.Error($"Error cleaning tracked on empty scan: {ex.Message}"); } catch { }
+                        }
+
                         try { Thread.Sleep(TimeSpan.FromSeconds(poll)); } catch { }
                         continue;
                     }
@@ -415,16 +441,25 @@ namespace ToastCloser
                                                         var monitorElapsedMS = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
                                                         if (shortcutKeyMaxWaitMS > 0 && monitorElapsedMS >= shortcutKeyMaxWaitMS)
                                                         {
-                                                            logger?.Info($"DisplayTimerWorker: monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); proceeding to send shortcut");
-                                                            if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                            logger?.Info($"DisplayTimerWorker: monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); considering send");
+                                                            bool shouldSendTimeout = false;
+                                                            try { lock (stateLock) { shouldSendTimeout = tracked.Count > 0; } } catch { shouldSendTimeout = true; }
+                                                            if (shouldSendTimeout)
                                                             {
-                                                                ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                                logger?.Info("Notification Center toggled (display-timer: timeout)");
+                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                                {
+                                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
+                                                                    logger?.Info("Notification Center toggled (display-timer: timeout)");
+                                                                }
+                                                                else
+                                                                {
+                                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
+                                                                    logger?.Info("Action Center toggled (display-timer: timeout)");
+                                                                }
                                                             }
                                                             else
                                                             {
-                                                                ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                                logger?.Info("Action Center toggled (display-timer: timeout)");
+                                                                logger?.Info("DisplayTimerWorker: tracked empty at timeout; skipping send");
                                                             }
 
                                                             break;
@@ -433,15 +468,24 @@ namespace ToastCloser
                                                         uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
                                                         if (elapsedSinceLastInput >= (uint)shortcutKeyWaitIdleMS)
                                                         {
-                                                            if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                            bool shouldSendIdle = false;
+                                                            try { lock (stateLock) { shouldSendIdle = tracked.Count > 0; } } catch { shouldSendIdle = true; }
+                                                            if (shouldSendIdle)
                                                             {
-                                                                ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
-                                                                logger?.Info("Notification Center toggled (display-timer)");
+                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                                {
+                                                                    ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
+                                                                    logger?.Info("Notification Center toggled (display-timer)");
+                                                                }
+                                                                else
+                                                                {
+                                                                    ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
+                                                                    logger?.Info("Action Center toggled (display-timer)");
+                                                                }
                                                             }
                                                             else
                                                             {
-                                                                ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
-                                                                logger?.Info("Action Center toggled (display-timer)");
+                                                                logger?.Info("DisplayTimerWorker: tracked empty at idle-check; skipping send");
                                                             }
                                                             break;
                                                         }
