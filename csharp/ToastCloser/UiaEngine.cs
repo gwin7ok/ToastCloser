@@ -40,6 +40,10 @@ namespace ToastCloser
             var workerTasks = new List<Task>();
             var workerTasksLock = new object();
 
+            // Grace period (ms) to allow quick shutdown cleanup in workers
+            // 1000 ms = 1 second
+            const int ShutdownGraceMS = 1000;
+
             Action InitializeAutomation = () =>
             {
                 lock (automationLock)
@@ -362,8 +366,32 @@ namespace ToastCloser
                                 {
                                     var workerTask = Task.Run(async () =>
                                     {
+                                        CancellationTokenRegistration reg = default;
                                         try
                                         {
+                                            // Register a shutdown handler so that when cancellation is requested
+                                            // the worker will immediately clear tracked/groups and give a short grace period.
+                                            try
+                                            {
+                                                reg = ct.Register(() =>
+                                                {
+                                                    try
+                                                    {
+                                                        lock (stateLock)
+                                                        {
+                                                            displayTimerActive = false;
+                                                            displayDeadline = null;
+                                                            tracked.Clear();
+                                                            groups.Clear();
+                                                        }
+                                                        try { logger?.Info("Shutdown handler in worker: cleared tracked/groups"); } catch { }
+                                                    }
+                                                    catch (Exception ex) { try { logger?.Debug("Shutdown handler in worker failed: " + ex.Message); } catch { } }
+                                                    try { System.Threading.Thread.Sleep(ShutdownGraceMS); } catch { }
+                                                });
+                                            }
+                                            catch (Exception ex) { try { logger?.Debug("Registering shutdown handler failed: " + ex.Message); } catch { } }
+
                                             var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
                                             if (waitMs > 0) await Task.Delay(waitMs, ct).ConfigureAwait(false);
 
@@ -508,6 +536,7 @@ namespace ToastCloser
                                         }
                                         finally
                                         {
+                                            try { reg.Dispose(); } catch { }
                                             try { lock (stateLock) { displayTimerActive = false; displayDeadline = null; } } catch { }
                                             try
                                             {
