@@ -12,10 +12,7 @@ namespace ToastCloser
         private Config _config;
         private SettingsForm? _settingsForm;
         private ConsoleForm? _consoleForm;
-        // Track middle-button down/up to ensure both occur on this icon
-        private bool _sawMiddleDown = false;
-        private int _middleDownTick = 0;
-        private System.Drawing.Point _middleDownPos;
+        // Track middle-button down/up to ensure both occur on this icon (no longer needed)
 
         public TrayApplicationContext(Config cfg)
         {
