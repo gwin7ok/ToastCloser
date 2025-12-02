@@ -14,7 +14,7 @@ namespace ToastCloser
     // Encapsulates all FlaUI-dependent code so Program.cs can remain free of FlaUI type references.
     public static class UiaEngine
     {
-        public static void RunLoop(Config cfg, string exeFolder, string logsDir, int minSeconds, int poll, int detectionTimeoutMS, bool detectOnly, bool preserveHistory, int shortcutKeyWaitIdleMS, int shortcutKeyMaxWaitMS, int winShortcutKeyIntervalMS, string shortcutKeyMode, bool wmCloseOnly)
+        public static void RunLoop(Config cfg, string exeFolder, string logsDir, int minSeconds, int poll, int detectionTimeoutMS, bool detectOnly, bool preserveHistory, int shortcutKeyWaitIdleMS, int shortcutKeyMaxWaitMS, int winShortcutKeyIntervalMS, string shortcutKeyMode, bool wmCloseOnly, CancellationToken ct = default)
         {
             var logger = Program.Logger.Instance;
 
@@ -35,6 +35,10 @@ namespace ToastCloser
             ConditionFactory? cf = new ConditionFactory(new UIA3PropertyLibrary());
             FlaUI.Core.AutomationElements.AutomationElement? desktop = automation?.GetDesktop();
             var automationLock = new object();
+
+            // Track display-timer worker tasks so we can wait for them on shutdown
+            var workerTasks = new List<Task>();
+            var workerTasksLock = new object();
 
             Action InitializeAutomation = () =>
             {
@@ -68,6 +72,7 @@ namespace ToastCloser
 
             while (true)
             {
+                if (ct.IsCancellationRequested) break;
                 try
                 {
                     if (preserveHistory && !_monitoringStarted)
@@ -252,8 +257,7 @@ namespace ToastCloser
                             try { logger?.Error($"Error cleaning tracked on empty scan: {ex.Message}"); } catch { }
                         }
 
-                        try { Thread.Sleep(TimeSpan.FromSeconds(poll)); } catch { }
-                        continue;
+                        goto NextIteration;
                     }
 
                     var searchEnd = DateTime.UtcNow;
@@ -356,12 +360,12 @@ namespace ToastCloser
 
                                 if (shouldStartWorker)
                                 {
-                                    Task.Run(async () =>
+                                    var workerTask = Task.Run(async () =>
                                     {
                                         try
                                         {
                                             var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
-                                            if (waitMs > 0) await Task.Delay(waitMs).ConfigureAwait(false);
+                                            if (waitMs > 0) await Task.Delay(waitMs, ct).ConfigureAwait(false);
 
                                             try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")})"); } catch { }
 
@@ -402,7 +406,8 @@ namespace ToastCloser
                                             {
                                                 while (true)
                                                 {
-                                                    try { Thread.Sleep(200); } catch { }
+                                                    if (ct.IsCancellationRequested) break;
+                                                    try { await Task.Delay(200, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
 
                                                     try
                                                     {
@@ -514,7 +519,9 @@ namespace ToastCloser
                                             catch { }
                                             try { logger?.Info("Display timer worker completed and cleared tracked/groups"); } catch { }
                                         }
-                                    });
+                                    }, ct);
+                                    lock (workerTasksLock) { workerTasks.Add(workerTask); }
+                                    _ = workerTask.ContinueWith(t => { lock (workerTasksLock) { workerTasks.Remove(t); } }, TaskScheduler.Default);
                                 }
                             }
                             catch { }
@@ -550,7 +557,7 @@ namespace ToastCloser
                                 logger?.Debug(() => msg);
                                 logger?.Info($"新しい通知があります。key={key} | Found | group={assignedGroup} | method={methodStr} | pid={pidVal2} | name=\"{cleanName}\"");
                             }
-                            continue;
+                            goto NextIteration;
                         }
 
                         int groupId;
@@ -608,7 +615,7 @@ namespace ToastCloser
                             {
                                 var skipMsg = $"key={key} Detect-only mode: not closing group={groupId}";
                                 logger?.Info(skipMsg);
-                                continue;
+                                goto NextIteration;
                             }
 
                             bool closed = false;
@@ -914,8 +921,9 @@ namespace ToastCloser
                 {
                     logger?.Error("Exception during scan: " + ex);
                 }
-
-                Thread.Sleep(TimeSpan.FromSeconds(poll));
+            NextIteration:
+                try { ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(poll)); } catch { }
+                if (ct.IsCancellationRequested) break;
             }
         }
 
