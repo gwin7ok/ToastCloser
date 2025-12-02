@@ -162,7 +162,7 @@ namespace TraverseToastTest
                 }
                 return (true, false, string.Empty);
             }
-            catch { return (false, false, string.Empty); }
+            catch (Exception ex) { try { Console.Error.WriteLine("TraverseToastTest: FindToastChain failed: " + ex.ToString()); } catch { } return (false, false, string.Empty); }
         }
 
         // Strategy 4: Use native EnumWindows to quickly enumerate top-level HWNDs, filter by title/class, then convert to AutomationElement
@@ -194,7 +194,7 @@ namespace TraverseToastTest
                         {
                             elem = automation.FromHandle(h);
                         }
-                        catch { }
+                        catch (Exception ex) { try { Console.Error.WriteLine("TraverseToastTest: automation.FromHandle failed: " + ex.ToString()); } catch { } }
                         if (elem == null) continue;
 
                         var res = FindToastChain(elem, cf);
@@ -204,7 +204,7 @@ namespace TraverseToastTest
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { try { Console.Error.WriteLine("TraverseToastTest: TryEnumWindowsStrategy inner loop failed: " + ex.ToString()); } catch { } }
             }
             sw.Stop();
             return (anyFound, textFound, foundText, sw.Elapsed.TotalMilliseconds);

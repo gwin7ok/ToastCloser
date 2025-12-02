@@ -66,27 +66,27 @@ class Program
         Console.WriteLine($"Overall search start: target='{targetName}'");
         // Per user instruction: use only FlaUI(UIA) minimal detection.
         // Run multiple trials and report timing statistics.
-        int trials = 10;
-        int delayMs = 200;
-        if (args != null && args.Length >= 1) int.TryParse(args[0], out trials);
-        if (args != null && args.Length >= 2) int.TryParse(args[1], out delayMs);
-
-        Console.WriteLine($"Running FlaUI minimal detection trials: count={trials} delayMs={delayMs}");
-        var times = new List<long>();
-        int foundCount = 0;
-
-        // Prepare for UIA with the ability to reinitialize on timeout.
-        UIA3Automation automation = null;
-        ConditionFactory cf = null;
-        FlaUI.Core.AutomationElements.AutomationElement desktop = null;
-
-        void EnsureAutomation()
-        {
-            if (automation == null)
-            {
-                automation = new UIA3Automation();
-                cf = new ConditionFactory(new UIA3PropertyLibrary());
-                desktop = automation.GetDesktop();
+                int count = 0;
+                try { count = (int)found.Length; } catch (Exception ex) { try { count = (int)found.GetLength(); } catch (Exception ex2) { try { count = (int)found.Count; } catch (Exception ex3) { try { Console.Error.WriteLine("FindCoreWindowTest: UIA(COM) retrieving collection count failed: " + ex.ToString() + "; " + ex2.ToString() + "; " + ex3.ToString()); } catch { } } } }
+                Console.WriteLine($"UIA (COM) found count={count}");
+                for (int i = 0; i < count; i++)
+                {
+                    dynamic el = null;
+                    try { el = found.GetElement(i); } catch (Exception ex) { try { el = found[i]; } catch (Exception ex2) { try { Console.Error.WriteLine("FindCoreWindowTest: UIA(COM) retrieving element failed: " + ex.ToString() + "; " + ex2.ToString()); } catch { } } }
+                    if (el == null) continue;
+                    object hwndObj = null;
+                    try { hwndObj = el.GetCurrentPropertyValue(UIA_NativeWindowHandlePropertyId); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: UIA(COM) GetCurrentPropertyValue NativeWindowHandle failed: " + ex.ToString()); } catch { } }
+                    int hwnd = 0;
+                    try { hwnd = Convert.ToInt32(hwndObj); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: UIA(COM) converting NativeWindowHandle failed: " + ex.ToString()); } catch { } }
+                    object nameObj = null; object classObj = null;
+                    try { nameObj = el.GetCurrentPropertyValue(UIA_NamePropertyId); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: UIA(COM) GetCurrentPropertyValue Name failed: " + ex.ToString()); } catch { } }
+                    try { classObj = el.GetCurrentPropertyValue(UIA_ClassNamePropertyId); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: UIA(COM) GetCurrentPropertyValue ClassName failed: " + ex.ToString()); } catch { } }
+                    string foundName = nameObj?.ToString() ?? "";
+                    string foundClass = classObj?.ToString() ?? "";
+                    Console.WriteLine($"  UIA(COM) match idx={i} Name='{foundName}' Class='{foundClass}' NativeWindowHandle=0x{hwnd:X}");
+                    if (hwnd == nativeHandleToConfirm)
+                        Console.WriteLine($"  -> NativeWindowHandle matches expected 0x{nativeHandleToConfirm:X}");
+                }
             }
         }
 
@@ -139,7 +139,7 @@ class Program
                             {
                                 foundEl = localDesktop.FindFirstChild(cond);
                             }
-                            catch { }
+                            catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: FindFirstChild failed: " + ex.ToString()); } catch { } }
                             swInner.Stop();
                             long workerFindMs = swInner.ElapsedMilliseconds;
 
@@ -151,9 +151,9 @@ class Program
                                     var hwndObj = foundEl.Properties.NativeWindowHandle.ValueOrDefault;
                                     workerHwnd = hwndObj != null ? Convert.ToInt64(hwndObj) : 0;
                                 }
-                                catch { }
-                                try { workerName = foundEl.Properties.Name.ValueOrDefault ?? string.Empty; } catch { }
-                                try { workerClass = foundEl.ClassName ?? string.Empty; } catch { }
+                                catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: reading NativeWindowHandle failed: " + ex.ToString()); } catch { } }
+                                try { workerName = foundEl.Properties.Name.ValueOrDefault ?? string.Empty; } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: reading Name failed: " + ex.ToString()); } catch { } }
+                                try { workerClass = foundEl.ClassName ?? string.Empty; } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: reading ClassName failed: " + ex.ToString()); } catch { } }
                                 // prop read time not measured separately here; keep 0 or measure if needed
                             }
 
@@ -178,7 +178,7 @@ class Program
                             if (result.found)
                             {
                                 // populate el info for later prop logging
-                                try { hwndVal = result.hwnd; propSwMs = (int)result.propMs; } catch { }
+                                try { hwndVal = result.hwnd; propSwMs = (int)result.propMs; } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: reading result.hwnd/propMs failed: " + ex.ToString()); } catch { } }
                                 Console.WriteLine($"  Worker captured element Name='{result.name}' Class='{result.cls}' NativeWindowHandle=0x{result.hwnd:X}");
                             }
                             // record combined find-call time as sum of parts (schedule+wait)
@@ -190,7 +190,7 @@ class Program
                             // Timeout: log, dispose and reinit then retry
                             findCallMs = scheduleMs + waitMs;
                             Console.WriteLine($"  Attempt {attempt}: Find call timed out after {waitMs}ms (>=3000ms). Reinitializing UIA (attempt {attempt}/{maxReinitRetries + 1})");
-                            try { automation?.Dispose(); } catch { }
+                            try { automation?.Dispose(); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: automation.Dispose failed: " + ex.ToString()); } catch { } }
                             automation = null; cf = null; desktop = null;
                             System.Threading.Thread.Sleep(200);
                             EnsureAutomation();
@@ -229,7 +229,7 @@ class Program
         }
 
         // Dispose automation if still alive
-        try { automation?.Dispose(); } catch { }
+        try { automation?.Dispose(); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: automation.Dispose failed on shutdown: " + ex.ToString()); } catch { } }
 
         var validTimes = times.Where(t => t >= 0).ToList();
         if (validTimes.Count > 0)
@@ -358,7 +358,7 @@ class Program
                     if (info != null)
                         matches.Add(info);
                 }
-                catch { }
+                catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: EnumWindows matcher threw: " + ex.ToString()); } catch { } }
                 return true;
             }, IntPtr.Zero);
             sw.Stop();
@@ -459,9 +459,9 @@ class Program
             // Create PropertyCondition objects by invoking constructor
             var propCondCtor = propConditionType?.GetConstructor(new Type[] { automationType, typeof(object) });
             object nameCond = null; object classCond = null; object controlCond = null;
-            try { nameCond = propCondCtor.Invoke(new object[] { nameProp, name }); } catch { }
-            try { classCond = propCondCtor.Invoke(new object[] { classProp, className }); } catch { }
-            try { controlCond = propCondCtor.Invoke(new object[] { controlTypeProp, 50032 }); } catch { }
+            try { nameCond = propCondCtor.Invoke(new object[] { nameProp, name }); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: propCondCtor.Invoke(name) failed: " + ex.ToString()); } catch { } }
+            try { classCond = propCondCtor.Invoke(new object[] { classProp, className }); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: propCondCtor.Invoke(class) failed: " + ex.ToString()); } catch { } }
+            try { controlCond = propCondCtor.Invoke(new object[] { controlTypeProp, 50032 }); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: propCondCtor.Invoke(control) failed: " + ex.ToString()); } catch { } }
 
             // Combine conditions if AndCondition type exists
             var andType = conditionsAsm.GetType("System.Windows.Automation.AndCondition");
@@ -469,7 +469,7 @@ class Program
             if (andType != null && nameCond != null && classCond != null && controlCond != null)
             {
                 var andCtor = andType.GetConstructor(new Type[] { typeof(object[])});
-                try { andCond = andCtor.Invoke(new object[] { new object[] { nameCond, classCond, controlCond } }); } catch { andCond = null; }
+                try { andCond = andCtor.Invoke(new object[] { new object[] { nameCond, classCond, controlCond } }); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: AndCondition ctor invoke failed: " + ex.ToString()); } catch { } andCond = null; }
             }
 
             object searchCond = andCond ?? (object)nameCond ?? (object)classCond;
@@ -487,18 +487,18 @@ class Program
             var found = findAllMethod.Invoke(root, new object[] { subtreeVal, searchCond });
             // Try to get Count/Length
             int count = 0;
-            try { count = (int)found.GetType().GetProperty("Count").GetValue(found); } catch { try { count = (int)found.GetType().GetProperty("Length").GetValue(found); } catch { } }
+            try { count = (int)found.GetType().GetProperty("Count").GetValue(found); } catch (Exception ex) { try { count = (int)found.GetType().GetProperty("Length").GetValue(found); } catch (Exception ex2) { try { Console.Error.WriteLine("FindCoreWindowTest: retrieving collection count/length failed: " + ex.ToString() + "; " + ex2.ToString()); } catch { } } }
             Console.WriteLine($"Managed UIA (reflection) found count={count}");
             for (int i = 0; i < count; i++)
             {
                 object item = null;
-                try { item = found.GetType().GetMethod("get_Item").Invoke(found, new object[] { i }); } catch { try { item = found.GetType().GetMethod("Get").Invoke(found, new object[] { i }); } catch { } }
+                try { item = found.GetType().GetMethod("get_Item").Invoke(found, new object[] { i }); } catch (Exception ex) { try { item = found.GetType().GetMethod("Get").Invoke(found, new object[] { i }); } catch (Exception ex2) { try { Console.Error.WriteLine("FindCoreWindowTest: retrieving item from collection failed: " + ex.ToString() + "; " + ex2.ToString()); } catch { } } }
                 if (item == null) continue;
                 // Get Current.Name and Current.ClassName and NativeWindowHandle
                 string foundName = ""; string foundClass = ""; int hwnd = 0;
-                try { foundName = (string)item.GetType().GetProperty("Current").GetValue(item).GetType().GetProperty("Name").GetValue(item.GetType().GetProperty("Current").GetValue(item))?.ToString() ?? ""; } catch { }
-                try { foundClass = (string)item.GetType().GetProperty("Current").GetValue(item).GetType().GetProperty("ClassName").GetValue(item.GetType().GetProperty("Current").GetValue(item))?.ToString() ?? ""; } catch { }
-                try { hwnd = (int)item.GetType().GetProperty("Current").GetValue(item).GetType().GetProperty("NativeWindowHandle").GetValue(item.GetType().GetProperty("Current").GetValue(item)); } catch { }
+                try { foundName = (string)item.GetType().GetProperty("Current").GetValue(item).GetType().GetProperty("Name").GetValue(item.GetType().GetProperty("Current").GetValue(item))?.ToString() ?? ""; } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: retrieving ManagedUIA Current.Name failed: " + ex.ToString()); } catch { } }
+                try { foundClass = (string)item.GetType().GetProperty("Current").GetValue(item).GetType().GetProperty("ClassName").GetValue(item.GetType().GetProperty("Current").GetValue(item))?.ToString() ?? ""; } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: retrieving ManagedUIA Current.ClassName failed: " + ex.ToString()); } catch { } }
+                try { hwnd = (int)item.GetType().GetProperty("Current").GetValue(item).GetType().GetProperty("NativeWindowHandle").GetValue(item.GetType().GetProperty("Current").GetValue(item)); } catch (Exception ex) { try { Console.Error.WriteLine("FindCoreWindowTest: retrieving ManagedUIA Current.NativeWindowHandle failed: " + ex.ToString()); } catch { } }
                 Console.WriteLine($"  ManagedUIA match idx={i} Name='{foundName}' Class='{foundClass}' NativeWindowHandle=0x{hwnd:X}");
                 if (hwnd == nativeHandleToConfirm)
                     Console.WriteLine($"  -> NativeWindowHandle matches expected 0x{nativeHandleToConfirm:X}");

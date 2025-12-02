@@ -157,9 +157,9 @@ class Program
             if (el != null)
             {
                 long hwnd = 0;
-                try { hwnd = Convert.ToInt64(el.Properties.NativeWindowHandle.ValueOrDefault); } catch { }
-                var nm = string.Empty; try { nm = el.Properties.Name.ValueOrDefault ?? string.Empty; } catch { }
-                var cls = string.Empty; try { cls = el.ClassName ?? string.Empty; } catch { }
+                try { hwnd = Convert.ToInt64(el.Properties.NativeWindowHandle.ValueOrDefault); } catch (Exception ex) { try { Console.Error.WriteLine("ShortcutWindowTest: extracting NativeWindowHandle failed: " + ex.ToString()); } catch { } }
+                var nm = string.Empty; try { nm = el.Properties.Name.ValueOrDefault ?? string.Empty; } catch (Exception ex) { try { Console.Error.WriteLine("ShortcutWindowTest: reading Name failed: " + ex.ToString()); } catch { } }
+                var cls = string.Empty; try { cls = el.ClassName ?? string.Empty; } catch (Exception ex) { try { Console.Error.WriteLine("ShortcutWindowTest: reading ClassName failed: " + ex.ToString()); } catch { } }
                 var info = $"hwnd=0x{hwnd:X} class='{cls}' name='{nm}'";
                 return (true, info);
             }

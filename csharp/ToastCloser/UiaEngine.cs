@@ -303,7 +303,7 @@ namespace ToastCloser
                                         var tname = SafeGetName(tn);
                                         if (!string.IsNullOrWhiteSpace(tname)) parts.Add(tname.Trim());
                                     }
-                                    catch { }
+                                    catch (Exception ex) { try { logger?.Debug("UiaEngine: SafeGetName(tn) failed: " + ex.ToString()); } catch { } }
                                 }
                                 if (parts.Count > 0)
                                 {
@@ -320,11 +320,11 @@ namespace ToastCloser
                                         contentDisplay = string.Join(" || ", filtered);
                                         if (contentDisplay.Length > 800) contentDisplay = contentDisplay.Substring(0, 800) + "...";
                                     }
-                                    catch { contentDisplay = contentSummary; }
+                                    catch (Exception ex) { try { logger?.Debug("UiaEngine: building contentDisplay failed: " + ex.ToString()); } catch { } contentDisplay = contentSummary; }
                                     if (contentSummary.Length > 800) contentSummary = contentSummary.Substring(0, 800) + "...";
                                 }
                             }
-                            catch { }
+                            catch (Exception ex) { try { logger?.Debug("UiaEngine: extracting toast text failed: " + ex.ToString()); } catch { } }
 
                             var pidVal2 = SafeGetProcessId(w);
                             var safeName2 = SafeGetName(w).Replace('\n', ' ').Replace('\r', ' ').Trim();
@@ -347,7 +347,7 @@ namespace ToastCloser
                                     {
                                         displayTimerActive = true;
                                         displayDeadline = DateTime.UtcNow.AddSeconds(minSeconds);
-                                        try { logger?.Info($"Display timer set (deadline={displayDeadline.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")}, displayLimitSeconds={minSeconds})"); } catch { }
+                                        try { logger?.Info($"Display timer set (deadline={displayDeadline.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")}, displayLimitSeconds={minSeconds})"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging Display timer set failed: " + ex.ToString()); } catch { } }
                                         workerDeadline = displayDeadline.Value;
                                         shouldStartWorker = true;
                                     }
@@ -375,10 +375,10 @@ namespace ToastCloser
                                                             tracked.Clear();
                                                             groups.Clear();
                                                         }
-                                                        try { logger?.Info("Shutdown handler in worker: cleared tracked/groups"); } catch { }
+                                                            try { logger?.Info("Shutdown handler in worker: cleared tracked/groups"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging shutdown handler info failed: " + ex.ToString()); } catch { } }
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("Shutdown handler in worker failed: " + ex.Message); } catch { } }
-                                                    try { System.Threading.Thread.Sleep(ShutdownGraceMS); } catch { }
+                                                    try { System.Threading.Thread.Sleep(ShutdownGraceMS); } catch (Exception ex) { try { logger?.Debug("UiaEngine: Sleep in shutdown handler failed: " + ex.ToString()); } catch { } }
                                                 });
                                             }
                                             catch (Exception ex) { try { logger?.Debug("Registering shutdown handler failed: " + ex.Message); } catch { } }
@@ -386,7 +386,7 @@ namespace ToastCloser
                                             var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
                                             if (waitMs > 0) await Task.Delay(waitMs, ct).ConfigureAwait(false);
 
-                                            try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")})"); } catch { }
+                                            try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")})"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging worker awakened failed: " + ex.ToString()); } catch { } }
 
                                             var monitoringStart = DateTime.UtcNow;
 
@@ -399,7 +399,7 @@ namespace ToastCloser
                                                     if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Mouse at {ipos.X},{ipos.Y}");
                                                 }
                                             }
-                                            catch { }
+                                            catch (Exception ex) { try { logger?.Debug("UiaEngine: exception during GetCursorPos in worker: " + ex.ToString()); } catch { } }
 
                                             try
                                             {
@@ -416,10 +416,10 @@ namespace ToastCloser
                                                             break;
                                                         }
                                                     }
-                                                    catch { }
+                                                            catch (Exception ex) { try { logger?.Debug("UiaEngine: GetAsyncKeyState inner exception during monitoring: " + ex.ToString()); } catch { } }
                                                 }
                                             }
-                                            catch { }
+                                            catch (Exception ex) { try { logger?.Debug("UiaEngine: exception during GetAsyncKeyState loop in worker: " + ex.ToString()); } catch { } }
 
                                             try
                                             {
@@ -440,7 +440,7 @@ namespace ToastCloser
                                                             }
                                                         }
                                                     }
-                                                    catch { }
+                                                    catch (Exception ex) { try { logger?.Debug("UiaEngine: exception checking async key state in worker: " + ex.ToString()); } catch { } }
 
                                                     try
                                                     {
@@ -457,10 +457,10 @@ namespace ToastCloser
                                                                     break;
                                                                 }
                                                             }
-                                                            catch { }
+                                                            catch (Exception ex) { try { logger?.Debug("UiaEngine: GetAsyncKeyState inner exception: " + ex.ToString()); } catch { } }
                                                         }
                                                     }
-                                                    catch { }
+                                                    catch (Exception ex) { try { logger?.Debug("UiaEngine: exception in keyboard-check loop in worker: " + ex.ToString()); } catch { } }
 
                                                     try
                                                     {
