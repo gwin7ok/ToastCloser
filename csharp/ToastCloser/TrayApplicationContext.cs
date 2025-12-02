@@ -135,44 +135,14 @@ namespace ToastCloser
             _trayIcon.ContextMenuStrip = _menu;
             _trayIcon.DoubleClick += (s, e) => ToggleConsole();
             // Middle-click the tray icon to exit (same as selecting "終了" from the menu)
-            // Only exit when a middle-button down AND subsequent up occurred on this icon
-            _trayIcon.MouseDown += (s, e) =>
+            // Use MouseClick so WinForms determines a valid click (Down+Up) and reduces false negatives.
+            _trayIcon.MouseClick += (s, e) =>
             {
                 try
                 {
                     if (e is MouseEventArgs me && me.Button == MouseButtons.Middle)
                     {
-                        _sawMiddleDown = true;
-                        _middleDownTick = Environment.TickCount;
-                        try { _middleDownPos = Cursor.Position; } catch { _middleDownPos = new System.Drawing.Point(0, 0); }
-                    }
-                }
-                catch { }
-            };
-
-            _trayIcon.MouseUp += (s, e) =>
-            {
-                try
-                {
-                    if (e is MouseEventArgs me && me.Button == MouseButtons.Middle)
-                    {
-                        if (_sawMiddleDown)
-                        {
-                            // Basic safety checks: time and small movement between down and up
-                            int tick = Environment.TickCount;
-                            int delta = tick - _middleDownTick;
-                            System.Drawing.Point upPos;
-                            try { upPos = Cursor.Position; } catch { upPos = new System.Drawing.Point(0, 0); }
-                            int dx = upPos.X - _middleDownPos.X;
-                            int dy = upPos.Y - _middleDownPos.Y;
-                            int distSq = dx * dx + dy * dy;
-                            // If the up occurred within 2 seconds and within ~16 pixels, treat as click on same spot
-                            if (delta >= 0 && delta <= 2000 && distSq <= 16 * 16)
-                            {
-                                ExitApplication();
-                            }
-                        }
-                        _sawMiddleDown = false;
+                        ExitApplication();
                     }
                 }
                 catch { }
