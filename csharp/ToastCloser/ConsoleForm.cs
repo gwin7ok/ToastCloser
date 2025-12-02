@@ -562,22 +562,58 @@ namespace ToastCloser
 
         private static string[] ReadLastLines(string path, int maxLines)
         {
+            try
+            {
+                // Efficient streaming to keep only last N lines
+                var q = new System.Collections.Generic.Queue<string>();
+                foreach (var line in File.ReadLines(path))
+                {
+                    q.Enqueue(line);
+                    if (q.Count > maxLines) q.Dequeue();
+                }
+                return q.ToArray();
+            }
+            catch (Exception ex)
+            {
+                // Diagnostic: log full exception and file metadata to help determine whether
+                // the failure is due to an exclusive lock by another process or another cause.
+                try { Program.Logger.Instance?.Error("ReadLastLines error: " + ex.ToString()); } catch { }
                 try
                 {
-                    // Efficient streaming to keep only last N lines
-                    var q = new System.Collections.Generic.Queue<string>();
-                    foreach (var line in File.ReadLines(path))
-                    {
-                        q.Enqueue(line);
-                        if (q.Count > maxLines) q.Dequeue();
-                    }
-                    return q.ToArray();
+                    var fi = new FileInfo(path);
+                    bool exists = false; long len = -1; DateTime lwt = DateTime.MinValue;
+                    try { exists = fi.Exists; if (exists) { len = fi.Length; lwt = fi.LastWriteTime; } } catch { }
+                    try { Program.Logger.Instance?.Debug("ReadLastLines diagnostic: Exists=" + exists + " Length=" + (len >= 0 ? len.ToString() : "(n/a)") + " LastWrite=" + (lwt != DateTime.MinValue ? lwt.ToString("O") : "(n/a)")); } catch { }
                 }
-                catch (Exception ex)
+                catch { }
+
+                // Try opening with more permissive sharing to check if file is readable while another
+                // process holds a handle without ReadWrite sharing. This does not change caller semantics
+                // except to provide diagnostic logs; if we can open with FileShare.ReadWrite we will read
+                // the tail and return it so the UI can display logs for diagnosis.
+                try
                 {
-                    try { Program.Logger.Instance?.Error("ReadLastLines error: " + ex.Message); } catch { }
-                    return Array.Empty<string>();
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var sr = new StreamReader(fs))
+                    {
+                        var q2 = new System.Collections.Generic.Queue<string>();
+                        string? line;
+                        while ((line = sr.ReadLine()) != null)
+                        {
+                            q2.Enqueue(line);
+                            if (q2.Count > maxLines) q2.Dequeue();
+                        }
+                        try { Program.Logger.Instance?.Info("ReadLastLines diagnostic: opened with FileShare.ReadWrite successfully — returning read lines for inspection"); } catch { }
+                        return q2.ToArray();
+                    }
                 }
+                catch (Exception ex2)
+                {
+                    try { Program.Logger.Instance?.Error("ReadLastLines diagnostic: open with FileShare.ReadWrite failed: " + ex2.ToString()); } catch { }
+                }
+
+                return Array.Empty<string>();
+            }
         }
 
         private DateTime? ParseLogLineTimestamp(string line)
