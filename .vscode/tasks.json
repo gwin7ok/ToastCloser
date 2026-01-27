@@ -20,7 +20,9 @@
         "panel": "shared",
         "showReuseMessage": false
       },
-      "problemMatcher": ["$msCompile"]
+      "problemMatcher": [
+        "$msCompile"
+      ]
     },
     {
       "label": "Run: Workspace Runner",
@@ -96,6 +98,21 @@
         "reveal": "always",
         "panel": "shared",
         "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "release-tag-and-push-short",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}\\scripts\\release-tag-and-push-short.ps1"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
       },
       "problemMatcher": []
     }
