@@ -375,7 +375,7 @@ namespace ToastCloser
                                                             tracked.Clear();
                                                             groups.Clear();
                                                         }
-                                                            try { logger?.Info("Shutdown handler in worker: cleared tracked/groups"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging shutdown handler info failed: " + ex.ToString()); } catch { } }
+                                                        try { logger?.Info("Shutdown handler in worker: cleared tracked/groups"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging shutdown handler info failed: " + ex.ToString()); } catch { } }
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("Shutdown handler in worker failed: " + ex.Message); } catch { } }
                                                     try { System.Threading.Thread.Sleep(ShutdownGraceMS); } catch (Exception ex) { try { logger?.Debug("UiaEngine: Sleep in shutdown handler failed: " + ex.ToString()); } catch { } }
@@ -416,7 +416,7 @@ namespace ToastCloser
                                                             break;
                                                         }
                                                     }
-                                                            catch (Exception ex) { try { logger?.Debug("UiaEngine: GetAsyncKeyState inner exception during monitoring: " + ex.ToString()); } catch { } }
+                                                    catch (Exception ex) { try { logger?.Debug("UiaEngine: GetAsyncKeyState inner exception during monitoring: " + ex.ToString()); } catch { } }
                                                 }
                                             }
                                             catch (Exception ex) { try { logger?.Debug("UiaEngine: exception during GetAsyncKeyState loop in worker: " + ex.ToString()); } catch { } }
@@ -474,13 +474,19 @@ namespace ToastCloser
                                                             {
                                                                 if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                                 {
+                                                                    var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
                                                                     logger?.Info("Notification Center toggled (display-timer: timeout)");
+                                                                    try { Thread.Sleep(150); } catch { }
+                                                                    TryRestoreForegroundWindow(prev);
                                                                 }
                                                                 else
                                                                 {
+                                                                    var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
                                                                     logger?.Info("Action Center toggled (display-timer: timeout)");
+                                                                    try { Thread.Sleep(150); } catch { }
+                                                                    TryRestoreForegroundWindow(prev);
                                                                 }
                                                             }
                                                             else
@@ -500,13 +506,19 @@ namespace ToastCloser
                                                             {
                                                                 if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                                 {
+                                                                    var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
                                                                     logger?.Info("Notification Center toggled (display-timer)");
+                                                                    try { Thread.Sleep(150); } catch { }
+                                                                    TryRestoreForegroundWindow(prev);
                                                                 }
                                                                 else
                                                                 {
+                                                                    var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('A', IsActionCenterOpen, winShortcutKeyIntervalMS);
                                                                     logger?.Info("Action Center toggled (display-timer)");
+                                                                    try { Thread.Sleep(150); } catch { }
+                                                                    TryRestoreForegroundWindow(prev);
                                                                 }
                                                             }
                                                             else
@@ -988,9 +1000,43 @@ namespace ToastCloser
                 inputs[3].U.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
 
                 NativeMethods.SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.INPUT)));
-                try { Program.Logger.Instance?.Info($"Sent Win+{char.ToUpperInvariant(keyChar)} #{i+1}/{sends}"); } catch { }
+                try { Program.Logger.Instance?.Info($"Sent Win+{char.ToUpperInvariant(keyChar)} #{i + 1}/{sends}"); } catch { }
                 Thread.Sleep(waitMS);
             }
+        }
+
+        // Attempt to restore previously focused window. Uses AttachThreadInput to
+        // increase likelihood SetForegroundWindow succeeds across threads.
+        static void TryRestoreForegroundWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                uint pid;
+                uint targetTid = NativeMethods.GetWindowThreadProcessId(hwnd, out pid);
+                uint currentTid = NativeMethods.GetCurrentThreadId();
+                bool attached = false;
+                try
+                {
+                    attached = NativeMethods.AttachThreadInput(currentTid, targetTid, true);
+                }
+                catch { attached = false; }
+
+                try { NativeMethods.ShowWindow(hwnd, 5); } catch { } // SW_SHOW
+                try { NativeMethods.SetForegroundWindow(hwnd); } catch { }
+                try { NativeMethods.BringWindowToTop(hwnd); } catch { }
+                try { NativeMethods.SetFocus(hwnd); } catch { }
+
+                try
+                {
+                    if (attached)
+                    {
+                        NativeMethods.AttachThreadInput(currentTid, targetTid, false);
+                    }
+                }
+                catch { }
+            }
+            catch { }
         }
 
         static uint GetIdleMilliseconds()
@@ -1039,7 +1085,7 @@ namespace ToastCloser
             return found;
         }
 
-        
+
 
         class TrackedInfo
         {

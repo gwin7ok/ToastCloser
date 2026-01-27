@@ -20,24 +20,24 @@ namespace ToastCloser
         // track last real user input from keyboard/mouse (Environment.TickCount)
         internal static uint _lastKeyboardTick = 0;
         internal static uint _lastMouseTick = 0;
-        internal static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0,0);
+        internal static System.Drawing.Point _lastCursorPos = new System.Drawing.Point(0, 0);
 
         // Shared shutdown token source and the thread running the RunLoop.
         public static System.Threading.CancellationTokenSource? ShutdownCts = null;
         public static System.Threading.Thread? RunLoopThread = null;
 
-            // Static constructor: runs before Main and before the type is JIT-compiled.
-            // Register assembly resolve handlers here so any assembly load during JIT
-            // or early startup can be resolved from the `dll\` folder.
-            static Program() { }
+        // Static constructor: runs before Main and before the type is JIT-compiled.
+        // Register assembly resolve handlers here so any assembly load during JIT
+        // or early startup can be resolved from the `dll\` folder.
+        static Program() { }
 
         public static void Main(string[] args)
         {
-                // Record the thread running the RunLoop so callers can wait for it on shutdown.
-                try { RunLoopThread = System.Threading.Thread.CurrentThread; } catch { }
+            // Record the thread running the RunLoop so callers can wait for it on shutdown.
+            try { RunLoopThread = System.Threading.Thread.CurrentThread; } catch { }
 
-                // Ensure there is a shared ShutdownCts that UI can cancel.
-                try { if (ShutdownCts == null) ShutdownCts = new System.Threading.CancellationTokenSource(); } catch { }
+            // Ensure there is a shared ShutdownCts that UI can cancel.
+            try { if (ShutdownCts == null) ShutdownCts = new System.Threading.CancellationTokenSource(); } catch { }
 
             var cfg = Config.Load() ?? new Config();
             string exeFolder = string.Empty;
@@ -419,10 +419,10 @@ namespace ToastCloser
             // punctuation and OEM keys often used on keyboards
             if ((vk >= 0xBA && vk <= 0xC0) || (vk >= 0xDB && vk <= 0xDF)) return true;
             return false;
-            }
         }
+    }
 
-        static class NativeMethods
+    static class NativeMethods
     {
         public const uint WM_CLOSE = 0x0010;
         public const int INPUT_MOUSE = 0;
@@ -483,6 +483,30 @@ namespace ToastCloser
         public static extern IntPtr WindowFromPoint(System.Drawing.Point p);
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        public static extern uint GetCurrentThreadId();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool BringWindowToTop(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
         public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -497,5 +521,5 @@ namespace ToastCloser
         public const uint GA_PARENT = 1;
     }
 
-    
+
 }
