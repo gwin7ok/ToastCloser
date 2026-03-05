@@ -52,16 +52,6 @@ jobs:
           name: ToastCloser-win-x64
           path: publish/ToastCloser_win-x64.zip
 
-      - name: Create GitHub Release and upload asset (when tagged)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: publish/ToastCloser_win-x64.zip
-          # 'body' will be populated by the preceding step when a tag triggers the workflow
-          body: ${{ steps.generate_release_notes.outputs.body }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Generate release notes from CHANGELOG.md
         if: startsWith(github.ref, 'refs/tags/')
         id: generate_release_notes
@@ -74,3 +64,44 @@ jobs:
           "body<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           $body | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Handle existing release (delete draft / edit published)
+        if: startsWith(github.ref, 'refs/tags/')
+        id: handle_release
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $repo = '${{ github.repository }}'
+          $action = 'create'
+          try {
+            $exists = & gh release view $tag --repo $repo > $null 2>&1; $rc = $LASTEXITCODE
+            if ($rc -eq 0) {
+              $relJson = & gh release view $tag --repo $repo --json id,draft 2>$null
+              if ($relJson) {
+                $rel = $relJson | ConvertFrom-Json
+                if ($rel.draft -eq $true) {
+                  Write-Host "Found draft release $tag; deleting draft to recreate."
+                  gh release delete $tag --repo $repo --yes 2>$null
+                  $action = 'create'
+                } else {
+                  Write-Host "Found published release $tag; updating notes and assets."
+                  gh release edit $tag --repo $repo --notes-file release-notes-$tag.md 2>$null
+                  gh release upload $tag publish/ToastCloser_win-x64.zip --repo $repo --clobber 2>$null
+                  $action = 'done'
+                }
+              }
+            }
+          } catch {
+            Write-Host "Handle existing release: error - $_"
+          }
+          "action=$action" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Create GitHub Release and upload asset (when tagged)
+        if: startsWith(github.ref, 'refs/tags/') && steps.handle_release.outputs.action == 'create'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: publish/ToastCloser_win-x64.zip
+          body: ${{ steps.generate_release_notes.outputs.body }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
