@@ -211,7 +211,9 @@ namespace ToastCloser
                                 Program.DisableSend = !Program.DisableSend;
                                 var status = Program.DisableSend ? "停止中" : "動作中";
                                 // Update tooltip to show status (keep short)
-                                try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch { }
+                                try { _trayIcon.Text = "ToastCloser - 機能: " + status; }
+                                catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set tooltip failed: " + ex.Message); }
+
                                 try
                                 {
                                     if (Program.DisableSend)
@@ -223,8 +225,9 @@ namespace ToastCloser
                                         _trayIcon.Icon = icon;
                                     }
                                 }
-                                catch { }
-                                try { _trayIcon.ShowBalloonTip(1500, "ToastCloser", "機能を" + status + " にしました", ToolTipIcon.Info); } catch { }
+                                catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set icon failed: " + ex.Message); }
+
+                                // バルーンはマウスホバーのツールチップで代用するため、明示的な表示は行わない。
                                 Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
                             }
                             catch { }
@@ -236,8 +239,7 @@ namespace ToastCloser
                 catch { }
             };
 
-            // Show a balloon tip on first run
-            try { _trayIcon.ShowBalloonTip(2000, "ToastCloser", "Tray mode: 右クリックで設定・コンソールを開けます", ToolTipIcon.Info); } catch { }
+            // 初回案内バルーンは表示しない（ツールチップのみで代用）
         }
 
         private void Menu_Opened(object? sender, EventArgs e)
