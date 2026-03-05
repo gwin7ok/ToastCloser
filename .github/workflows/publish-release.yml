@@ -67,7 +67,7 @@ jobs:
 
       # Note: do not call `gh auth login` here. Instead pass GITHUB_TOKEN to steps that invoke gh.
 
-      - name: Delete existing GitHub Release if present
+      - name: Delete existing GitHub Release(s) for this tag (any state)
         if: startsWith(github.ref, 'refs/tags/')
         id: delete_old_release
         shell: pwsh
@@ -77,19 +77,24 @@ jobs:
         run: |
           $tag = '${{ github.ref_name }}'
           $repo = $env:REPO
-          $uri = "https://api.github.com/repos/$repo/releases/tags/$tag"
+          $uri = "https://api.github.com/repos/$repo/releases?per_page=100"
           $headers = @{ Authorization = "token $env:GITHUB_TOKEN"; "User-Agent" = "actions" }
           try {
-            $resp = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -ErrorAction Stop
-            if ($null -ne $resp -and $resp.id) {
-              Write-Output "Found existing release id $($resp.id) for $tag. Deleting..."
-              $delUri = "https://api.github.com/repos/$repo/releases/$($resp.id)"
-              Invoke-RestMethod -Uri $delUri -Headers $headers -Method Delete -ErrorAction Stop
-              Write-Output "Deleted release $tag (id $($resp.id))."
+            # List releases and delete any whose tag_name matches, regardless of draft/published state
+            $releases = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -ErrorAction Stop
+            $matches = $releases | Where-Object { $_.tag_name -eq $tag }
+            if ($matches -and $matches.Count -gt 0) {
+              foreach ($r in $matches) {
+                Write-Output "Found release id $($r.id) with tag $($r.tag_name). Deleting..."
+                $delUri = "https://api.github.com/repos/$repo/releases/$($r.id)"
+                Invoke-RestMethod -Uri $delUri -Headers $headers -Method Delete -ErrorAction Stop
+                Write-Output "Deleted release id $($r.id)."
+              }
+            } else {
+              Write-Output "No releases found matching tag $tag"
             }
           } catch {
-            # 404 / not found is OK; otherwise log and continue
-            Write-Output "No existing release for $tag or could not query releases: $($_.Exception.Message)"
+            Write-Output "Error querying/deleting releases: $($_.Exception.Message)"
           }
 
       - name: Create GitHub Release and upload asset (when tagged)
