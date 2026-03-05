@@ -24,6 +24,7 @@ namespace ToastCloser
             var pngPathResources = Path.Combine(AppContext.BaseDirectory, "Resources", "ToastCloser.png");
             var iconPathResources = Path.Combine(AppContext.BaseDirectory, "Resources", "ToastCloser.ico");
             Icon icon = SystemIcons.Application;
+            Icon? disabledIcon = null;
             try
             {
                 Program.Logger.Instance?.Info($"Tray icon candidates: ico='{iconPath}', icoRes='{iconPathResources}', png='{pngPath}', pngRes='{pngPathResources}'");
@@ -86,6 +87,31 @@ namespace ToastCloser
                         Program.Logger.Instance?.Error("Failed to load ICO: " + ex.Message);
                     }
                 }
+                // Attempt to load a disabled-state ICO (optional). Prefer same locations with suffix '_disabled' or 'Disabled'.
+                try
+                {
+                    string[] candidates = new string[] {
+                        iconPath.Replace("ToastCloser.ico", "ToastCloser_disabled.ico"),
+                        iconPath.Replace("ToastCloser.ico", "ToastCloser-Disabled.ico"),
+                        Path.Combine(AppContext.BaseDirectory, "ToastCloser_disabled.ico"),
+                        iconPathResources.Replace("ToastCloser.ico", "ToastCloser_disabled.ico"),
+                        iconPathResources.Replace("ToastCloser.ico", "ToastCloser-Disabled.ico")
+                    };
+                    foreach (var c in candidates)
+                    {
+                        if (!string.IsNullOrEmpty(c) && File.Exists(c))
+                        {
+                            try
+                            {
+                                disabledIcon = new Icon(c);
+                                Program.Logger.Instance?.Info($"Loaded disabled ICO from: {c}");
+                                break;
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
                 // Note: we intentionally do not fall back to runtime PNG->HICON conversion.
                 // The build step generates `Resources\ToastCloser.ico` from the PNG and that
                 // ICO will be copied into the app's output. Using the ICO preserves proper
@@ -103,6 +129,17 @@ namespace ToastCloser
                 Text = "ToastCloser",
                 Visible = true
             };
+
+            // If we loaded a disabled icon, ensure tooltip reflects current state
+            try
+            {
+                if (Program.DisableSend && disabledIcon != null)
+                {
+                    _trayIcon.Icon = disabledIcon;
+                    try { _trayIcon.Text = "ToastCloser - 送信: 無効"; } catch { }
+                }
+            }
+            catch { }
 
             _menu = new ContextMenuStrip();
             try { _menu.ShowItemToolTips = true; } catch { }
@@ -137,9 +174,41 @@ namespace ToastCloser
             {
                 try
                 {
-                    if (e is MouseEventArgs me && me.Button == MouseButtons.Middle)
+                    if (e is MouseEventArgs me)
                     {
-                        ExitApplication();
+                        if (me.Button == MouseButtons.Middle)
+                        {
+                            ExitApplication();
+                            return;
+                        }
+                        // Left click: toggle send-disabled mode
+                        if (me.Button == MouseButtons.Left)
+                        {
+                            try
+                            {
+                                Program.DisableSend = !Program.DisableSend;
+                                var status = Program.DisableSend ? "無効" : "有効";
+                                // Update tooltip to show status (keep short)
+                                try { _trayIcon.Text = "ToastCloser - 送信: " + status; } catch { }
+                                try
+                                {
+                                    if (Program.DisableSend)
+                                    {
+                                        if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
+                                    }
+                                    else
+                                    {
+                                        _trayIcon.Icon = icon;
+                                    }
+                                }
+                                catch { }
+                                try { _trayIcon.ShowBalloonTip(1500, "ToastCloser", "トースト自動送信を " + status + " にしました", ToolTipIcon.Info); } catch { }
+                                Program.Logger.Instance?.Info($"Tray: DisableSend set to {Program.DisableSend}");
+                            }
+                            catch { }
+                            return;
+                        }
+                        // otherwise ignore
                     }
                 }
                 catch { }
@@ -196,7 +265,7 @@ namespace ToastCloser
             catch { }
         }
 
-        
+
 
         private void ShowSettings()
         {

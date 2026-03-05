@@ -22,9 +22,12 @@
   <ItemGroup>
     <!-- Do not copy Resources to output; ICO is embedded as resource and ApplicationIcon is set -->
     <None Include="Resources\ToastCloser.png" />
+    <None Include="Resources\ToastCloser_disabled.png" />
     <None Include="Resources\ToastCloser.ico" />
+    <None Include="Resources\ToastCloser_disabled.ico" />
     <!-- Also embed the ICO so single-file/published exes can load it from the assembly -->
     <EmbeddedResource Include="Resources\ToastCloser.ico" />
+    <EmbeddedResource Include="Resources\ToastCloser_disabled.ico" />
   </ItemGroup>
 
   <!-- Icon generation is handled outside the build process.

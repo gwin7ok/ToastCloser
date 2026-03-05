@@ -472,7 +472,11 @@ namespace ToastCloser
                                                             try { lock (stateLock) { shouldSendTimeout = tracked.Count > 0; } } catch { shouldSendTimeout = true; }
                                                             if (shouldSendTimeout)
                                                             {
-                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                                if (Program.DisableSend)
+                                                                {
+                                                                    logger?.Info("DisplayTimerWorker: send disabled via tray toggle; skipping send (timeout)");
+                                                                }
+                                                                else if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                                 {
                                                                     var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
@@ -504,7 +508,11 @@ namespace ToastCloser
                                                             try { lock (stateLock) { shouldSendIdle = tracked.Count > 0; } } catch { shouldSendIdle = true; }
                                                             if (shouldSendIdle)
                                                             {
-                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                                if (Program.DisableSend)
+                                                                {
+                                                                    logger?.Info("DisplayTimerWorker: send disabled via tray toggle; skipping send (idle)");
+                                                                }
+                                                                else if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                                 {
                                                                     var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
