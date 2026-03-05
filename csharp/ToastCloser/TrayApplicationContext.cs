@@ -12,6 +12,8 @@ namespace ToastCloser
         private Config _config;
         private SettingsForm? _settingsForm;
         private ConsoleForm? _consoleForm;
+        private System.Windows.Forms.Timer? _singleClickTimer;
+        private bool _doubleClickOccurred;
         // Track middle-button down/up to ensure both occur on this icon (no longer needed)
 
         public TrayApplicationContext(Config cfg)
@@ -189,7 +191,13 @@ namespace ToastCloser
 
             // Assign ContextMenuStrip to the tray icon so default closing behaviour remains (we cancel Opening and show manually)
             _trayIcon.ContextMenuStrip = _menu;
-            _trayIcon.DoubleClick += (s, e) => ToggleConsole();
+            _trayIcon.DoubleClick += (s, e) =>
+            {
+                // Mark that a double-click occurred so pending single-click toggle is cancelled
+                try { _doubleClickOccurred = true; } catch { }
+                try { _singleClickTimer?.Stop(); } catch { }
+                ToggleConsole();
+            };
             // Middle-click the tray icon to exit (same as selecting "終了" from the menu)
             // Use MouseClick so WinForms determines a valid click (Down+Up) and reduces false negatives.
             _trayIcon.MouseClick += (s, e) =>
@@ -206,31 +214,80 @@ namespace ToastCloser
                         // Left click: toggle send-disabled mode
                         if (me.Button == MouseButtons.Left)
                         {
+                            // Delay handling to allow double-click to be detected.
                             try
                             {
-                                Program.DisableSend = !Program.DisableSend;
-                                var status = Program.DisableSend ? "停止中" : "動作中";
-                                // Update tooltip to show status (keep short)
-                                try { _trayIcon.Text = "ToastCloser - 機能: " + status; }
-                                catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set tooltip failed: " + ex.Message); }
-
+                                _doubleClickOccurred = false;
+                                if (_singleClickTimer == null)
+                                {
+                                    _singleClickTimer = new System.Windows.Forms.Timer();
+                                    _singleClickTimer.Tick += (ts, te) =>
+                                    {
+                                        try
+                                        {
+                                            _singleClickTimer?.Stop();
+                                            if (!_doubleClickOccurred)
+                                            {
+                                                try
+                                                {
+                                                    Program.DisableSend = !Program.DisableSend;
+                                                    var status = Program.DisableSend ? "停止中" : "動作中";
+                                                    try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set tooltip failed: " + ex.Message); }
+                                                    try
+                                                    {
+                                                        if (Program.DisableSend)
+                                                        {
+                                                            if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
+                                                        }
+                                                        else
+                                                        {
+                                                            _trayIcon.Icon = icon;
+                                                        }
+                                                    }
+                                                    catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set icon failed: " + ex.Message); }
+                                                    Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
+                                                }
+                                                catch (Exception ex)
+                                                {
+                                                    Program.Logger.Instance?.Error("Tray: toggle failed: " + ex.Message);
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    };
+                                }
+                                else
+                                {
+                                    _singleClickTimer.Stop();
+                                    _singleClickTimer.Interval = SystemInformation.DoubleClickTime + 20;
+                                }
+                                _singleClickTimer.Start();
+                            }
+                            catch (Exception ex)
+                            {
+                                Program.Logger.Instance?.Error("Tray: scheduling single-click timer failed: " + ex.Message);
+                                // Fallback: perform immediate toggle
                                 try
                                 {
-                                    if (Program.DisableSend)
+                                    Program.DisableSend = !Program.DisableSend;
+                                    var status = Program.DisableSend ? "停止中" : "動作中";
+                                    try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch { }
+                                    try
                                     {
-                                        if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
+                                        if (Program.DisableSend)
+                                        {
+                                            if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
+                                        }
+                                        else
+                                        {
+                                            _trayIcon.Icon = icon;
+                                        }
                                     }
-                                    else
-                                    {
-                                        _trayIcon.Icon = icon;
-                                    }
+                                    catch { }
+                                    Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
                                 }
-                                catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set icon failed: " + ex.Message); }
-
-                                // バルーンはマウスホバーのツールチップで代用するため、明示的な表示は行わない。
-                                Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
+                                catch { }
                             }
-                            catch { }
                             return;
                         }
                         // otherwise ignore
@@ -338,6 +395,8 @@ namespace ToastCloser
             catch { }
 
             _trayIcon.Visible = false;
+            try { _singleClickTimer?.Stop(); } catch { }
+            try { _singleClickTimer?.Dispose(); } catch { }
             _trayIcon.Dispose();
             Application.Exit();
         }
