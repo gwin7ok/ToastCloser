@@ -29,6 +29,10 @@ if (-not $Tag) {
     else { $Tag = Get-LatestTag }
 }
 
+# Normalize tag for matching: allow leading 'v' on either side (tag or changelog)
+$tagNoV = $Tag.TrimStart('v', 'V')
+
+
 if (-not $Tag) {
     Write-Error "Tag could not be determined. Provide -Tag or set GITHUB_REF_NAME or have annotated tags in git."
     exit 3
@@ -36,8 +40,8 @@ if (-not $Tag) {
 
 $all = Get-Content $ChangelogPath -ErrorAction Stop
 
-# find header line matching the tag. Accept formats: '## [v1.2.3]' or '## v1.2.3' or '## [v1.2.3] - date'
-$pattern = '^\s*##\s*\[?' + [regex]::Escape($Tag) + '\]?'
+# find header line matching the tag. Accept formats: '## [v1.2.3]' or '## v1.2.3' or '## [1.2.3] - date' (allow optional leading 'v')
+$pattern = '^\s*##\s*\[?v?' + [regex]::Escape($tagNoV) + '\]?'
 $start = -1
 for ($i = 0; $i -lt $all.Length; $i++) {
     if ($all[$i] -match $pattern) { $start = $i; break }
@@ -57,12 +61,13 @@ for ($j = $start; $j -lt $all.Length; $j++) {
 }
 
 # Trim leading/trailing blank lines
-while ($bodyLines.Count -gt 0 -and ($bodyLines[0].Trim() -eq '')) { $bodyLines = $bodyLines[1..($bodyLines.Count-1)] }
-while ($bodyLines.Count -gt 0 -and ($bodyLines[-1].Trim() -eq '')) { $bodyLines = $bodyLines[0..($bodyLines.Count-2)] }
+while ($bodyLines.Count -gt 0 -and ($bodyLines[0].Trim() -eq '')) { $bodyLines = $bodyLines[1..($bodyLines.Count - 1)] }
+while ($bodyLines.Count -gt 0 -and ($bodyLines[-1].Trim() -eq '')) { $bodyLines = $bodyLines[0..($bodyLines.Count - 2)] }
 
 if ($OutFile) {
     $bodyLines | Out-File -FilePath $OutFile -Encoding UTF8
     Write-Output "Wrote release body to $OutFile"
-} else {
+}
+else {
     $bodyLines | ForEach-Object { Write-Output $_ }
 }
