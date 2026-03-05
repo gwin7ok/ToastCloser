@@ -78,27 +78,34 @@ jobs:
           $repo = '${{ github.repository }}'
           $action = 'create'
           try {
-            $exists = & gh release view $tag --repo $repo > $null 2>&1; $rc = $LASTEXITCODE
+            # Use conservative error handling: capture exit codes from gh and avoid unhandled failures
+            $null = & gh release view $tag --repo $repo > $null 2>&1; $rc = $LASTEXITCODE
             if ($rc -eq 0) {
               $relJson = & gh release view $tag --repo $repo --json id,draft 2>$null
               if ($relJson) {
                 $rel = $relJson | ConvertFrom-Json
                 if ($rel.draft -eq $true) {
                   Write-Host "Found draft release $tag; deleting draft to recreate."
-                  gh release delete $tag --repo $repo --yes 2>$null
+                  & gh release delete $tag --repo $repo --yes 2>$null; $rcDel = $LASTEXITCODE
+                  if ($rcDel -ne 0) { Write-Host "Warning: gh release delete returned $rcDel" }
                   $action = 'create'
                 } else {
                   Write-Host "Found published release $tag; updating notes and assets."
-                  gh release edit $tag --repo $repo --notes-file release-notes-$tag.md 2>$null
-                  gh release upload $tag publish/ToastCloser_win-x64.zip --repo $repo --clobber 2>$null
+                  & gh release edit $tag --repo $repo --notes-file release-notes-$tag.md 2>$null; $rcEdit = $LASTEXITCODE
+                  if ($rcEdit -ne 0) { Write-Host "Warning: gh release edit returned $rcEdit" }
+                  & gh release upload $tag publish/ToastCloser_win-x64.zip --repo $repo --clobber 2>$null; $rcUp = $LASTEXITCODE
+                  if ($rcUp -ne 0) { Write-Host "Warning: gh release upload returned $rcUp" }
                   $action = 'done'
                 }
               }
             }
           } catch {
             Write-Host "Handle existing release: error - $_"
+          } finally {
+            "action=$action" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            # Always exit zero so subsequent conditional steps can decide what to do based on 'action'
+            exit 0
           }
-          "action=$action" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Create GitHub Release and upload asset (when tagged)
         if: startsWith(github.ref, 'refs/tags/') && steps.handle_release.outputs.action == 'create'
