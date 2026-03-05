@@ -57,5 +57,20 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: publish/ToastCloser_win-x64.zip
+          # 'body' will be populated by the preceding step when a tag triggers the workflow
+          body: ${{ steps.generate_release_notes.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes from CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/')
+        id: generate_release_notes
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          pwsh -NoProfile -File .\scripts\generate-release-body.ps1 -Tag $tag -OutFile release-notes-$tag.md
+          $body = Get-Content "release-notes-$tag.md" -Raw
+          # Set step output 'body' using GITHUB_OUTPUT file
+          "body<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $body | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
