@@ -65,6 +65,16 @@ jobs:
           $body | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      - name: Authenticate gh CLI (use GITHUB_TOKEN)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $token = '${{ secrets.GITHUB_TOKEN }}'
+          if (-not $token) { Write-Error 'GITHUB_TOKEN not set'; exit 1 }
+          $token | gh auth login --with-token
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Handle existing release (delete draft / edit published)
         if: startsWith(github.ref, 'refs/tags/')
         id: handle_release
