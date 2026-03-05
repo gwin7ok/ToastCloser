@@ -93,7 +93,7 @@ jobs:
           }
 
       - name: Create GitHub Release and upload asset (when tagged)
-        if: startsWith(github.ref, 'refs/tags/') && steps.handle_release.outputs.action == 'create'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: publish/ToastCloser_win-x64.zip
