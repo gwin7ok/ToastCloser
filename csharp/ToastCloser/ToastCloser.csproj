@@ -19,6 +19,8 @@
     <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
   </ItemGroup>
 
+  <!-- Disabled ICO is embedded as a resource; no need to copy to output Resources folder -->
+
   <ItemGroup>
     <!-- Do not copy Resources to output; ICO is embedded as resource and ApplicationIcon is set -->
     <None Include="Resources\ToastCloser.png" />

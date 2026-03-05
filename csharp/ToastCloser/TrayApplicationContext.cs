@@ -35,9 +35,11 @@ namespace ToastCloser
                     var resNames = asm.GetManifestResourceNames();
                     Program.Logger.Instance?.Info("Assembly manifest resources: " + string.Join(",", resNames));
                     string? match = null;
+                    string? matchDisabled = null;
                     foreach (var rn in resNames)
                     {
-                        if (rn.EndsWith("ToastCloser.ico", StringComparison.OrdinalIgnoreCase)) { match = rn; break; }
+                        if (rn.EndsWith("ToastCloser.ico", StringComparison.OrdinalIgnoreCase)) { match = rn; }
+                        if (rn.EndsWith("ToastCloser_disabled.ico", StringComparison.OrdinalIgnoreCase)) { matchDisabled = rn; }
                     }
                     if (match != null)
                     {
@@ -54,6 +56,26 @@ namespace ToastCloser
                                 catch (Exception ex)
                                 {
                                     Program.Logger.Instance?.Error("Failed to load ICO from resource: " + ex.Message);
+                                }
+                            }
+                        }
+                    }
+                    // Also attempt to load an embedded disabled-state ICO if present.
+                    if (matchDisabled != null)
+                    {
+                        Program.Logger.Instance?.Info($"Loading disabled ICO from embedded resource: {matchDisabled}");
+                        using (var s2 = asm.GetManifestResourceStream(matchDisabled))
+                        {
+                            if (s2 != null)
+                            {
+                                try
+                                {
+                                    disabledIcon = new Icon(s2);
+                                    Program.Logger.Instance?.Info("Loaded disabled ICO from resource successfully");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Program.Logger.Instance?.Error("Failed to load disabled ICO from resource: " + ex.Message);
                                 }
                             }
                         }
@@ -136,7 +158,7 @@ namespace ToastCloser
                 if (Program.DisableSend && disabledIcon != null)
                 {
                     _trayIcon.Icon = disabledIcon;
-                    try { _trayIcon.Text = "ToastCloser - 送信: 無効"; } catch { }
+                    try { _trayIcon.Text = "ToastCloser - 機能停止中"; } catch { }
                 }
             }
             catch { }
@@ -187,9 +209,9 @@ namespace ToastCloser
                             try
                             {
                                 Program.DisableSend = !Program.DisableSend;
-                                var status = Program.DisableSend ? "無効" : "有効";
+                                var status = Program.DisableSend ? "停止中" : "動作中";
                                 // Update tooltip to show status (keep short)
-                                try { _trayIcon.Text = "ToastCloser - 送信: " + status; } catch { }
+                                try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch { }
                                 try
                                 {
                                     if (Program.DisableSend)
@@ -202,8 +224,8 @@ namespace ToastCloser
                                     }
                                 }
                                 catch { }
-                                try { _trayIcon.ShowBalloonTip(1500, "ToastCloser", "トースト自動送信を " + status + " にしました", ToolTipIcon.Info); } catch { }
-                                Program.Logger.Instance?.Info($"Tray: DisableSend set to {Program.DisableSend}");
+                                try { _trayIcon.ShowBalloonTip(1500, "ToastCloser", "機能を" + status + " にしました", ToolTipIcon.Info); } catch { }
+                                Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
                             }
                             catch { }
                             return;
