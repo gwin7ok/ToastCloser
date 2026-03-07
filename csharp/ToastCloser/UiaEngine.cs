@@ -78,6 +78,24 @@ namespace ToastCloser
             while (true)
             {
                 if (ct.IsCancellationRequested) break;
+                // If feature disabled via tray or external toggle, pause scanning at the poll level.
+                // Clear any tracked state so workers won't send for stale entries.
+                if (Program.DisableFeature)
+                {
+                    try
+                    {
+                        lock (stateLock)
+                        {
+                            displayTimerActive = false;
+                            displayDeadline = null;
+                            tracked.Clear();
+                            groups.Clear();
+                        }
+                        try { logger?.Info("RunLoop paused: feature disabled"); } catch { }
+                    }
+                    catch { }
+                    goto NextIteration;
+                }
                 try
                 {
                     // preserveHistory removed; no legacy monitoring fallback (see note above)
@@ -472,11 +490,7 @@ namespace ToastCloser
                                                             try { lock (stateLock) { shouldSendTimeout = tracked.Count > 0; } } catch { shouldSendTimeout = true; }
                                                             if (shouldSendTimeout)
                                                             {
-                                                                if (Program.DisableSend)
-                                                                {
-                                                                    logger?.Info("DisplayTimerWorker: send disabled via tray toggle; skipping send (timeout)");
-                                                                }
-                                                                else if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                                 {
                                                                     var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);
@@ -508,11 +522,7 @@ namespace ToastCloser
                                                             try { lock (stateLock) { shouldSendIdle = tracked.Count > 0; } } catch { shouldSendIdle = true; }
                                                             if (shouldSendIdle)
                                                             {
-                                                                if (Program.DisableSend)
-                                                                {
-                                                                    logger?.Info("DisplayTimerWorker: send disabled via tray toggle; skipping send (idle)");
-                                                                }
-                                                                else if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
+                                                                if (string.Equals(shortcutKeyMode, "noticecenter", StringComparison.OrdinalIgnoreCase))
                                                                 {
                                                                     var prev = NativeMethods.GetForegroundWindow();
                                                                     ToggleShortcutWithDetection('N', IsNotificationCenterOpen, winShortcutKeyIntervalMS);

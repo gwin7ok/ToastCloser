@@ -1,5 +1,8 @@
 using System;
 using System.Drawing;
+using System.IO.Pipes;
+using System.Threading;
+using System.Text;
 using System.IO;
 using System.Windows.Forms;
 
@@ -7,6 +10,9 @@ namespace ToastCloser
 {
     public class TrayApplicationContext : ApplicationContext
     {
+        private SynchronizationContext? _syncContext;
+        private Icon _defaultIcon = SystemIcons.Application;
+        private Icon? _disabledIcon = null;
         private NotifyIcon _trayIcon;
         private ContextMenuStrip _menu;
         private Config _config;
@@ -18,6 +24,9 @@ namespace ToastCloser
 
         public TrayApplicationContext(Config cfg)
         {
+            // capture the UI synchronization context so background threads can marshal UI updates
+            try { _syncContext = SynchronizationContext.Current; } catch { _syncContext = null; }
+
             _config = cfg;
 
             var pngPath = Path.Combine(AppContext.BaseDirectory, "ToastCloser.png");
@@ -154,16 +163,23 @@ namespace ToastCloser
                 Visible = true
             };
 
+            // store icons for later use by ApplyDisableState and external commands
+            try { _defaultIcon = icon; } catch { _defaultIcon = SystemIcons.Application; }
+            try { _disabledIcon = disabledIcon; } catch { _disabledIcon = null; }
+
             // If we loaded a disabled icon, ensure tooltip reflects current state
             try
             {
-                if (Program.DisableSend && disabledIcon != null)
+                if (Program.DisableFeature && _disabledIcon != null)
                 {
-                    _trayIcon.Icon = disabledIcon;
+                    _trayIcon.Icon = _disabledIcon;
                     try { _trayIcon.Text = "ToastCloser - 機能停止中"; } catch { }
                 }
             }
             catch { }
+
+            // Start named-pipe server to accept external toggle commands
+            try { StartNamedPipeServer(); } catch (Exception ex) { Program.Logger.Instance?.Error("NamedPipe server start failed: " + ex.Message); }
 
             _menu = new ContextMenuStrip();
             try { _menu.ShowItemToolTips = true; } catch { }
@@ -230,22 +246,8 @@ namespace ToastCloser
                                             {
                                                 try
                                                 {
-                                                    Program.DisableSend = !Program.DisableSend;
-                                                    var status = Program.DisableSend ? "停止中" : "動作中";
-                                                    try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set tooltip failed: " + ex.Message); }
-                                                    try
-                                                    {
-                                                        if (Program.DisableSend)
-                                                        {
-                                                            if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
-                                                        }
-                                                        else
-                                                        {
-                                                            _trayIcon.Icon = icon;
-                                                        }
-                                                    }
-                                                    catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set icon failed: " + ex.Message); }
-                                                    Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
+                                                    // Toggle using centralized method to ensure consistency
+                                                    ApplyDisableState(!Program.DisableFeature, _defaultIcon, _disabledIcon);
                                                 }
                                                 catch (Exception ex)
                                                 {
@@ -269,22 +271,7 @@ namespace ToastCloser
                                 // Fallback: perform immediate toggle
                                 try
                                 {
-                                    Program.DisableSend = !Program.DisableSend;
-                                    var status = Program.DisableSend ? "停止中" : "動作中";
-                                    try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch { }
-                                    try
-                                    {
-                                        if (Program.DisableSend)
-                                        {
-                                            if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
-                                        }
-                                        else
-                                        {
-                                            _trayIcon.Icon = icon;
-                                        }
-                                    }
-                                    catch { }
-                                    Program.Logger.Instance?.Info($"Tray: Disable set to {Program.DisableSend}");
+                                    ApplyDisableState(!Program.DisableFeature, _defaultIcon, _disabledIcon);
                                 }
                                 catch { }
                             }
@@ -297,6 +284,139 @@ namespace ToastCloser
             };
 
             // 初回案内バルーンは表示しない（ツールチップのみで代用）
+        }
+
+        // Centralized UI-safe method to apply disable state and update tray visuals
+        private void ApplyDisableState(bool disabled, Icon? defaultIcon, Icon? disabledIcon)
+        {
+            try
+            {
+                void Action()
+                {
+                    try
+                    {
+                        Program.DisableFeature = disabled;
+                        var status = Program.DisableFeature ? "停止中" : "動作中";
+                        try { _trayIcon.Text = "ToastCloser - 機能: " + status; } catch { }
+                        try
+                        {
+                            var useDefault = defaultIcon ?? SystemIcons.Application;
+                            if (Program.DisableFeature)
+                            {
+                                if (disabledIcon != null) _trayIcon.Icon = disabledIcon;
+                                else _trayIcon.Icon = useDefault;
+                            }
+                            else
+                            {
+                                _trayIcon.Icon = useDefault;
+                            }
+                        }
+                        catch (Exception ex) { Program.Logger.Instance?.Error("Tray: set icon failed: " + ex.Message); }
+                        Program.Logger.Instance?.Info(Program.DisableFeature ? "Feature disabled" : "Feature enabled");
+                    }
+                    catch (Exception ex) { Program.Logger.Instance?.Error("ApplyDisableState failed: " + ex.Message); }
+                }
+
+                if (_syncContext != null)
+                {
+                    _syncContext.Post(_ => Action(), null);
+                }
+                else
+                {
+                    Action();
+                }
+            }
+            catch { }
+        }
+
+        // Start a background thread hosting a simple named-pipe server for external commands
+        private void StartNamedPipeServer()
+        {
+            var thread = new Thread(() =>
+            {
+                var pipeName = "ToastCloserControl";
+                while (true)
+                {
+                    try
+                    {
+                        using (var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.Asynchronous))
+                        {
+                            Program.Logger.Instance?.Debug("NamedPipe: waiting for client...");
+                            try { server.WaitForConnection(); } catch { }
+                            if (!server.IsConnected) { continue; }
+                            Program.Logger.Instance?.Info("NamedPipe: client connected");
+                            // Read bytes until newline or message completion
+                            string cmd = string.Empty;
+                            try
+                            {
+                                var sb = new StringBuilder();
+                                var buffer = new byte[256];
+                                server.ReadMode = PipeTransmissionMode.Message;
+                                do
+                                {
+                                    int n = server.Read(buffer, 0, buffer.Length);
+                                    if (n > 0)
+                                    {
+                                        sb.Append(Encoding.UTF8.GetString(buffer, 0, n));
+                                        if (sb.ToString().IndexOf('\n') >= 0) break;
+                                    }
+                                } while (!server.IsMessageComplete);
+                                cmd = sb.ToString().Trim();
+                                // Remove possible BOM (U+FEFF) at start
+                                if (!string.IsNullOrEmpty(cmd) && cmd[0] == '\uFEFF') cmd = cmd.Substring(1);
+                            }
+                            catch (Exception ex)
+                            {
+                                Program.Logger.Instance?.Error("NamedPipe: read failed: " + ex.Message);
+                                cmd = string.Empty;
+                            }
+                            var lc = cmd.Trim().ToLowerInvariant();
+                            Program.Logger.Instance?.Info($"NamedPipe: received '{lc}'");
+                            try
+                            {
+                                // Respond using UTF8 without BOM to avoid client-side BOM issues
+                                using (var sw = new StreamWriter(server, new System.Text.UTF8Encoding(false)) { AutoFlush = true })
+                                {
+                                    if (lc == "toggle")
+                                    {
+                                        ApplyDisableState(!Program.DisableFeature, _defaultIcon, _disabledIcon);
+                                        sw.WriteLine("OK");
+                                    }
+                                    else if (lc == "disable" || lc == "1" || lc == "true")
+                                    {
+                                        ApplyDisableState(true, _defaultIcon, _disabledIcon);
+                                        sw.WriteLine("OK");
+                                    }
+                                    else if (lc == "enable" || lc == "0" || lc == "false")
+                                    {
+                                        ApplyDisableState(false, _defaultIcon, _disabledIcon);
+                                        sw.WriteLine("OK");
+                                    }
+                                    else
+                                    {
+                                        if (lc.Contains("toggle")) { ApplyDisableState(!Program.DisableFeature, _trayIcon.Icon, null); sw.WriteLine("OK"); }
+                                        else { sw.WriteLine("UNKNOWN"); }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Program.Logger.Instance?.Error("NamedPipe: command handling failed: " + ex.Message);
+                                try { using (var sw = new StreamWriter(server, Encoding.UTF8) { AutoFlush = true }) { sw.WriteLine("ERROR"); } } catch { }
+                            }
+                        }
+                    }
+                    catch (ThreadAbortException) { break; }
+                    catch (Exception ex)
+                    {
+                        Program.Logger.Instance?.Error("NamedPipe server error: " + ex.Message);
+                        try { Thread.Sleep(1000); } catch { }
+                    }
+                }
+            });
+            thread.IsBackground = true;
+            thread.Name = "ToastCloser.NamedPipeServer";
+            thread.Start();
         }
 
         private void Menu_Opened(object? sender, EventArgs e)

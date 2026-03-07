@@ -25,8 +25,8 @@ namespace ToastCloser
         // Shared shutdown token source and the thread running the RunLoop.
         public static System.Threading.CancellationTokenSource? ShutdownCts = null;
         public static System.Threading.Thread? RunLoopThread = null;
-        // When true, do not perform shortcut-send actions to close toasts (toggled from tray)
-        public static volatile bool DisableSend = false;
+        // When true, the feature (search/polling) is disabled via tray or external command
+        public static volatile bool DisableFeature = false;
 
         // Static constructor: runs before Main and before the type is JIT-compiled.
         // Register assembly resolve handlers here so any assembly load during JIT
