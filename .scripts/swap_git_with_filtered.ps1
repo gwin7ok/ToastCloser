@@ -1,6 +1,8 @@
 Param()
-$orig = 'G:\\Cursor_Folder\\ToastCloser'
-$filtered = 'G:\\Cursor_Folder\\ToastCloser-filtered'
+# Determine repository root relative to this script
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$orig = $RepoRoot
+$filtered = "${RepoRoot}-filtered"
 Set-Location -LiteralPath $orig
 Write-Output "Original repo: $orig"
 if (-not (Test-Path $filtered)) { Write-Output "ERROR: filtered repo not found at $filtered"; exit 2 }

@@ -1,5 +1,7 @@
 Param()
-Set-Location -LiteralPath 'G:\\Cursor_Folder\\ToastCloser'
+# Use repository root relative to this script for portability
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location -LiteralPath $RepoRoot
 Write-Output '--- git status --porcelain ---'
 git status --porcelain
 Write-Output ''
@@ -21,9 +23,11 @@ $items = git rev-list --objects --all | ForEach-Object {
 $items | Sort-Object -Property Size -Descending | Select-Object -First 20 | ForEach-Object { Write-Output ("$($_.Size)`t$($_.Sha)`t$($_.Path)") }
 Write-Output ''
 Write-Output '--- backup and filtered paths existence ---'
-Write-Output "ToastCloser .git.backup exists: $(Test-Path 'G:\\Cursor_Folder\\ToastCloser\\.git.backup')"
-Write-Output "filtered clone exists: $(Test-Path 'G:\\Cursor_Folder\\ToastCloser-filtered')"
-Write-Output "mirror exists: $(Test-Path 'G:\\Cursor_Folder\\ToastCloser-mirror.git')"
+$RepoParent = Split-Path -Parent $RepoRoot
+$RepoName = Split-Path -Leaf $RepoRoot
+Write-Output "ToastCloser .git.backup exists: $(Test-Path (Join-Path $RepoRoot '.git.backup'))"
+Write-Output "filtered clone exists: $(Test-Path (Join-Path $RepoParent ("$RepoName-filtered")))"
+Write-Output "mirror exists: $(Test-Path (Join-Path $RepoParent ("$RepoName-mirror.git")))"
 Write-Output ''
 Write-Output 'Done.'
 Return

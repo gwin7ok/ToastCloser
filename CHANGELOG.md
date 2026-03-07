@@ -28,3 +28,11 @@ and this project adheres to Semantic Versioning.
 
 [Unreleased]: https://github.com/gwin7ok/ToastCloser/compare/v1.0.0...HEAD
 [v1.0.0]: https://github.com/gwin7ok/ToastCloser/releases/tag/v1.0.0
+
+## [1.2.0] - 2026-03-07
+
+### Changed
+
+- 無効化の挙動を変更しました: 個別の送信をスキップするのではなく、ポーリング（スキャン）ループレベルで停止するようにし、停止中はトラッキング状態をクリアしてワーカーが送信しないようにしました。
+- 外部制御用スクリプト `toggle_feature.ps1` を実行ファイルと同じフォルダへ配置するようにしました。
+

@@ -22,6 +22,25 @@
 
   - 短い注意: `ToastCloser` はデスクトップ上の通知 UI を操作するため、同一ユーザーのデスクトップセッションで実行してください。必要に応じて管理者権限で実行してください。
 
+外部からのトグル操作 (toggle_feature.ps1)
+
+- 配布版では `toggle_feature.ps1` が実行ファイルと同じフォルダにコピーされます。
+- 役割: 実行中の `ToastCloser` に対して named pipe 経由で `toggle` / `disable` / `enable` コマンドを送信し、機能の有効/無効を切り替えます。
+- 使い方（配布フォルダ内から呼ぶ例）:
+
+```powershell
+& '.\toggle_feature.ps1' toggle
+```
+- オプション: `toggle` / `disable` / `enable` のいずれかを指定できます。
+- 注意:
+  - パスに空白が含まれる場合は必ずクォートしてください。
+  - 新しい PowerShell プロセスで実行したい場合は次のようにします:
+
+```powershell
+pwsh -NoProfile -File ".\toggle_feature.ps1" toggle
+```
+
+
 ## ローカルでビルド（開発者向け）
 
 1. .NET 8 SDK を用意します。
