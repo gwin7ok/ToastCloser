@@ -73,7 +73,17 @@
   <!-- Output reorganization removed: all builds keep DLLs in the output root.
        Previously this project moved managed dependencies into a `dll\` subfolder
        and invoked an external `organize.ps1`. That behavior was removed so the
-       runtime's default probing finds dependencies when they are present in the
-       application base directory. -->
+        runtime's default probing finds dependencies when they are present in the
+        application base directory. -->
+
+  <ItemGroup>
+    <!-- Copy helper script next to the EXE on build/publish so external automation
+         can invoke it from the same folder as the executable. The script lives
+         in the repository-level `scripts` folder. -->
+    <None Include="..\..\scripts\toggle_feature.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
 
 </Project>

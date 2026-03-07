@@ -1,8 +1,8 @@
 # Toggle ToastCloser disable state via Named Pipe
 # Usage:
-#   .\toggle_namedpipe.ps1 toggle
-#   .\toggle_namedpipe.ps1 disable
-#   .\toggle_namedpipe.ps1 enable
+#   .\toggle_feature.ps1 toggle
+#   .\toggle_feature.ps1 disable
+#   .\toggle_feature.ps1 enable
 param(
     [Parameter(Mandatory=$true)][string]$Command
 )
