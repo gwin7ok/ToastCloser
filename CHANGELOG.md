@@ -5,11 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on "Keep a Changelog" (https://keepachangelog.com/en/1.0.0/)
 and this project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [1.2.0] - 2026-03-07
 
-### Added
+### Changed
 
-- (none)
+- 無効化の挙動を変更しました: 個別の送信をスキップするのではなく、ポーリング（スキャン）ループレベルで停止するようにし、停止中はトラッキング状態をクリアしてワーカーが送信しないようにしました。
+- 外部制御用スクリプト `toggle_feature.ps1` を実行ファイルと同じフォルダへ配置するようにしました。
 
 ## [1.1.0] - 2026-03-05
 
@@ -28,11 +29,4 @@ and this project adheres to Semantic Versioning.
 
 [Unreleased]: https://github.com/gwin7ok/ToastCloser/compare/v1.0.0...HEAD
 [v1.0.0]: https://github.com/gwin7ok/ToastCloser/releases/tag/v1.0.0
-
-## [1.2.0] - 2026-03-07
-
-### Changed
-
-- 無効化の挙動を変更しました: 個別の送信をスキップするのではなく、ポーリング（スキャン）ループレベルで停止するようにし、停止中はトラッキング状態をクリアしてワーカーが送信しないようにしました。
-- 外部制御用スクリプト `toggle_feature.ps1` を実行ファイルと同じフォルダへ配置するようにしました。
 
