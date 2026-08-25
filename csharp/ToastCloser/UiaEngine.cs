@@ -61,8 +61,10 @@ namespace ToastCloser
 
             InitializeAutomation();
 
-            // initialize cursor position
+            // initialize cursor position and tick timestamps
             try { NativeMethods.GetCursorPos(out Program._lastCursorPos); } catch (Exception ex) { try { logger?.Debug("GetCursorPos failed during init: " + ex.Message); } catch { } }
+            Program._lastKeyboardTick = (uint)Environment.TickCount;
+            Program._lastMouseTick = (uint)Environment.TickCount;
 
             // Local copy of config flags used inside the loop
             var localCfg = cfg ?? new Config();
@@ -279,8 +281,6 @@ namespace ToastCloser
                     logger?.Debug($"Scan found {found.Length} candidates durationMS={searchMS:0.0}");
                     logger?.Info($"Toast search: end (duration={searchMS:0.0}ms) found={found.Length}");
 
-                    // Re-iterate through found for existing processing (we will process again below)
-                    var postedHwnds = new HashSet<long>();
                     foreach (var w in found)
                     {
                         string key = MakeKey(w);
@@ -408,6 +408,10 @@ namespace ToastCloser
 
                                             var monitoringStart = DateTime.UtcNow;
 
+                                            // ★初期値0による即時発火を防止★
+                                            Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                            Program._lastMouseTick = (uint)Environment.TickCount;
+
                                             try
                                             {
                                                 if (NativeMethods.GetCursorPos(out var ipos))
@@ -426,7 +430,8 @@ namespace ToastCloser
                                                     try
                                                     {
                                                         short s = NativeMethods.GetAsyncKeyState(vk);
-                                                        bool transition = (s & 0x0001) != 0;
+                                                        // ★押下中(0x8000) または イベント(0x0001) を検知★
+                                                        bool transition = (s & 0x8000) != 0 || (s & 0x0001) != 0;
                                                         if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                         {
                                                             Program._lastKeyboardTick = (uint)Environment.TickCount;
@@ -444,8 +449,9 @@ namespace ToastCloser
                                                 while (true)
                                                 {
                                                     if (ct.IsCancellationRequested) break;
-                                                    try { await Task.Delay(200, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
+                                                    try { await Task.Delay(100, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
 
+                                                    // マウス移動検知
                                                     try
                                                     {
                                                         if (NativeMethods.GetCursorPos(out var cur))
@@ -460,6 +466,7 @@ namespace ToastCloser
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: exception checking async key state in worker: " + ex.ToString()); } catch { } }
 
+                                                    // キーボード入力検知
                                                     try
                                                     {
                                                         for (int vk = 0x01; vk <= 0xFE; vk++)
@@ -467,7 +474,8 @@ namespace ToastCloser
                                                             try
                                                             {
                                                                 short s = NativeMethods.GetAsyncKeyState(vk);
-                                                                bool transition = (s & 0x0001) != 0;
+                                                                // ★押下中(0x8000) または イベント(0x0001) を検知★
+                                                                bool transition = (s & 0x8000) != 0 || (s & 0x0001) != 0;
                                                                 if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                                 {
                                                                     Program._lastKeyboardTick = (uint)Environment.TickCount;
@@ -515,8 +523,15 @@ namespace ToastCloser
                                                             break;
                                                         }
 
-                                                        uint elapsedSinceLastInput = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
-                                                        if (elapsedSinceLastInput >= (uint)shortcutKeyWaitIdleMS)
+                                                        // 自前のキー・マウス監視経過時間
+                                                        uint localElapsed = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
+                                                        // OS全体の無操作時間（GetLastInputInfo）
+                                                        uint osIdle = Program.GetIdleMilliseconds();
+
+                                                        // 双方ともに指定アイドル時間を満たしている場合のみ実行
+                                                        uint effectiveIdle = Math.Min(localElapsed, osIdle);
+
+                                                        if (effectiveIdle >= (uint)shortcutKeyWaitIdleMS)
                                                         {
                                                             bool shouldSendIdle = false;
                                                             try { lock (stateLock) { shouldSendIdle = tracked.Count > 0; } } catch { shouldSendIdle = true; }
@@ -654,117 +669,6 @@ namespace ToastCloser
                             }
                         }
                         catch { }
-
-                        // Disable per-poll immediate close; handled by display timer worker instead
-                        if (false && elapsed >= minSeconds)
-                        {
-                            var closeMsg = $"key={key} Attempting to close group={groupId} (elapsed {elapsed:0.0})";
-                            logger?.Info(closeMsg);
-
-                            if (detectOnly)
-                            {
-                                var skipMsg = $"key={key} Detect-only mode: not closing group={groupId}";
-                                logger?.Info(skipMsg);
-                                goto NextIteration;
-                            }
-
-                            bool closed = false;
-                            string? closedBy = null;
-                            try
-                            {
-                                bool attempted = false;
-                                try
-                                {
-                                    if (w.Patterns != null && w.Patterns.Window != null && w.Patterns.Window.IsSupported)
-                                    {
-                                        attempted = true;
-                                        try
-                                        {
-                                            w.Patterns.Window.Pattern.Close();
-                                            closed = true;
-                                            closedBy = "WindowPattern.Close";
-                                            logger?.Info($"key={key} Attempted WindowPattern.Close");
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            logger?.Debug($"key={key} WindowPattern.Close threw: {ex.Message}");
-                                        }
-                                    }
-                                }
-                                catch { }
-
-                                if (!attempted)
-                                {
-                                    logger?.Info($"key={key} WindowPattern not supported on element; skipping other fallbacks");
-                                    try
-                                    {
-                                        IntPtr nativeHwnd = IntPtr.Zero;
-                                        try { var nv = w.Properties.NativeWindowHandle.ValueOrDefault; if (nv != 0) nativeHwnd = new IntPtr(nv); } catch { }
-                                        var className = w.ClassName ?? string.Empty;
-                                        var aid = string.Empty;
-                                        try { aid = w.Properties.AutomationId.ValueOrDefault ?? string.Empty; } catch { }
-                                        var rid = SafeGetRuntimeIdString(w);
-                                        var pid = SafeGetProcessId(w);
-                                        var rect = w.BoundingRectangle;
-                                        logger?.Info($"key={key} Diagnostics: class={className} aid={aid} nativeHandle=0x{nativeHwnd.ToInt64():X} pid={pid} rid={rid} rect={rect.Left}-{rect.Top}-{rect.Right}-{rect.Bottom}");
-
-                                        int textCount = 0;
-                                        try { var tnodes = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text)); textCount = tnodes?.Length ?? 0; } catch { }
-                                        logger?.Info($"key={key} Diagnostics: textNodeCount={textCount}");
-
-                                        bool hasCloseBtn = false;
-                                        try { var btnCond = cfSafe.ByControlType(ControlType.Button).And(cfSafe.ByName("閉じる").Or(cfSafe.ByName("Close"))); var btn = w.FindFirstDescendant(btnCond); hasCloseBtn = btn != null; } catch { }
-                                        logger?.Info($"key={key} Diagnostics: hasCloseButton={hasCloseBtn}");
-
-                                        try
-                                        {
-                                            var hostHwnd = FindHostWindowHandle(w);
-                                            if (hostHwnd != IntPtr.Zero)
-                                            {
-                                                var csb = new System.Text.StringBuilder(256);
-                                                var clenHost = NativeMethods.GetClassName(hostHwnd, csb, csb.Capacity);
-                                                var hostClass = clenHost > 0 ? csb.ToString() : string.Empty;
-                                                var titleSb = new System.Text.StringBuilder(256);
-                                                NativeMethods.GetWindowText(hostHwnd, titleSb, titleSb.Capacity);
-                                                var hostTitle = titleSb.ToString() ?? string.Empty;
-                                                logger?.Info($"key={key} Diagnostics: hostHwnd=0x{hostHwnd.ToInt64():X} hostClass={hostClass} hostTitle=\"{hostTitle}\"");
-                                            }
-                                            else
-                                            {
-                                                logger?.Info($"key={key} Diagnostics: hostHwnd=0 (none found)");
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            logger?.Debug($"key={key} Diagnostics: FindHostWindowHandle error: {ex.Message}");
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        logger?.Debug($"key={key} Diagnostics logging failed: {ex.Message}");
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                logger?.Error($"key={key} Error during WindowPattern attempt: {ex.Message}");
-                            }
-
-                            if (closed && !string.IsNullOrEmpty(closedBy))
-                            {
-                                var cbMsg = $"key={key} ClosedBy={closedBy}";
-                                logger?.Info(cbMsg);
-                            }
-
-                            if (closed)
-                            {
-                                lock (stateLock)
-                                {
-                                    tracked.Remove(key);
-                                    if (!tracked.Values.Any(t => t.GroupId == groupId)) { groups.Remove(groupId); }
-                                }
-                            }
-                        }
                     }
 
                     var presentKeys = new HashSet<string>(found.Select(f => MakeKey(f)));
@@ -1040,7 +944,7 @@ namespace ToastCloser
                 }
                 catch { attached = false; }
 
-                try { NativeMethods.ShowWindow(hwnd, 5); } catch { } // SW_SHOW
+                try { NativeMethods.ShowWindow(hwnd, 5); } catch { }
                 try { NativeMethods.SetForegroundWindow(hwnd); } catch { }
                 try { NativeMethods.BringWindowToTop(hwnd); } catch { }
                 try { NativeMethods.SetFocus(hwnd); } catch { }
@@ -1055,16 +959,6 @@ namespace ToastCloser
                 catch { }
             }
             catch { }
-        }
-
-        static uint GetIdleMilliseconds()
-        {
-            var li = new NativeMethods.LASTINPUTINFO();
-            li.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.LASTINPUTINFO));
-            if (!NativeMethods.GetLastInputInfo(ref li)) return 0;
-            uint tick = (uint)Environment.TickCount;
-            if (tick >= li.dwTime) return tick - li.dwTime;
-            return (uint)((uint.MaxValue - li.dwTime) + tick);
         }
 
         static bool IsCoreNotificationWindowPresentNative()

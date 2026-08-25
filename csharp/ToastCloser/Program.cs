@@ -135,6 +135,7 @@ namespace ToastCloser
             if (s.Length > 200) s = s.Substring(0, 200) + "...";
             return s;
         }
+
         static string MakeKey(object wObj)
         {
             try
@@ -240,10 +241,8 @@ namespace ToastCloser
             public int Pid { get; set; }
             public string? ShortName { get; set; }
         }
-
         // Action Center helpers moved to UiaEngine.cs
-
-        private static uint GetIdleMilliseconds()
+        internal static uint GetIdleMilliseconds()
         {
             var li = new NativeMethods.LASTINPUTINFO();
             li.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.LASTINPUTINFO));
@@ -407,19 +406,33 @@ namespace ToastCloser
         // Helper: classify whether a virtual-key code is a likely keyboard key
         internal static bool IsKeyboardVirtualKey(int vk)
         {
-            // 0x30-0x5A: 0-9, A-Z
+            // 0-9, A-Z
             if (vk >= 0x30 && vk <= 0x5A) return true;
-            // 0x60-0x6F: Numpad 0-9 and ops
+            // テンキー
             if (vk >= 0x60 && vk <= 0x6F) return true;
-            // 0x70-0x87: Function keys
+            // ファンクションキー (F1-F24)
             if (vk >= 0x70 && vk <= 0x87) return true;
-            // common control keys: SHIFT, CTRL, ALT, SPACE, TAB, ENTER, BACK
-            if (vk == 0x10 || vk == 0x11 || vk == 0x12) return true; // SHIFT, CTRL, ALT
-            if (vk == 0x20 || vk == 0x09 || vk == 0x0D || vk == 0x08) return true; // SPACE, TAB, ENTER, BACK
-            // arrows
-            if (vk >= 0x25 && vk <= 0x28) return true;
-            // punctuation and OEM keys often used on keyboards
-            if ((vk >= 0xBA && vk <= 0xC0) || (vk >= 0xDB && vk <= 0xDF)) return true;
+
+            // 一般制御キー: SHIFT, CTRL, ALT, PAUSE, CAPS, ESC
+            if (vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0x13 || vk == 0x14 || vk == 0x1B) return true;
+            // SPACE, TAB, ENTER, BACKSPACE
+            if (vk == 0x20 || vk == 0x09 || vk == 0x0D || vk == 0x08) return true;
+            // PageUp, PageDown, End, Home, 矢印キー, Insert, Delete
+            if (vk >= 0x21 && vk <= 0x2E) return true;
+            // Windowsキー, Appsキー
+            if (vk == 0x5B || vk == 0x5C || vk == 0x5D) return true;
+
+            // 記号・OEMキー (:, ;, @, [, ], \, ￥ など)
+            if ((vk >= 0xBA && vk <= 0xC0) || (vk >= 0xDB && vk <= 0xDF) || vk == 0xE2) return true;
+
+            // ★IME・日本語入力キー★
+            // VK_PROCESSKEY (IME変換・入力中のキーストローク全般)
+            if (vk == 0xE5) return true;
+            // かな, 漢字, 変換, 無変換
+            if (vk == 0x15 || vk == 0x19 || vk == 0x1C || vk == 0x1D) return true;
+            // カタカナひらがな, 全角半角
+            if (vk >= 0xF2 && vk <= 0xF4) return true;
+
             return false;
         }
     }
@@ -522,6 +535,4 @@ namespace ToastCloser
 
         public const uint GA_PARENT = 1;
     }
-
-
 }
