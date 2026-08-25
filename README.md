@@ -130,7 +130,7 @@ GitHub Releases にて配布されている ZIP をダウンロードして解�
 
 - 個人のユーティリティとして管理しています。変更を加える場合は動作を理解した上でプルリクエストをお送りください。
 
-更新履歴は `CHANGELOG.md` を参照してください。
+更新履歴は [CHANGELOG.md](https://github.com/gwin7ok/ToastCloser/blob/main/CHANGELOG.md) を参照してください。
 
 ---
 
