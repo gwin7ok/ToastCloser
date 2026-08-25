@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on "Keep a Changelog" (https://keepachangelog.com/en/1.0.0/)
 and this project adheres to Semantic Versioning.
 
+## [1.3.0] - 2026-08-25
+
+### Changed
+
+- キーボード入力検知の改善と無効化状態の管理を強化
+
 ## [1.2.0] - 2026-03-07
 
 ### Changed
