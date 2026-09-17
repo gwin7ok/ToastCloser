@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using FlaUI.Core;
-using FlaUI.Core.Definitions;
-using FlaUI.Core.Conditions;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Conditions;
+using FlaUI.Core.Definitions;
 using FlaUI.UIA3;
 
 namespace ToastCloser
@@ -14,6 +18,80 @@ namespace ToastCloser
     // Encapsulates all FlaUI-dependent code so Program.cs can remain free of FlaUI type references.
     public static class UiaEngine
     {
+        #region Win32 IME & Thread Info API
+        [DllImport("imm32.dll")]
+        private static extern IntPtr ImmGetContext(IntPtr hWnd);
+
+        [DllImport("imm32.dll")]
+        private static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+
+        [DllImport("imm32.dll", CharSet = CharSet.Auto)]
+        private static extern int ImmGetCompositionString(IntPtr hIMC, uint dwIndex, byte[]? lpBuf, uint dwBufLen);
+
+        private const uint GCS_COMPSTR = 0x0008;
+
+        [DllImport("user32.dll")]
+        private static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct GUITHREADINFO
+        {
+            public int cbSize;
+            public int flags;
+            public IntPtr hwndActive;
+            public IntPtr hwndFocus;
+            public IntPtr hwndCapture;
+            public IntPtr hwndMenuOwner;
+            public IntPtr hwndMoveSize;
+            public IntPtr hwndCaret;
+            public Rectangle rcCaret;
+        }
+
+        /// <summary>
+        /// フォアグラウンドウィンドウ（またはそのフォーカス子コントロール）で
+        /// IMEの未確定文字列が存在するか（日本語入力中か）を判定します。
+        /// </summary>
+        private static bool IsImeComposing()
+        {
+            try
+            {
+                IntPtr fgHwnd = NativeMethods.GetForegroundWindow();
+                if (fgHwnd == IntPtr.Zero) return false;
+
+                uint threadId = NativeMethods.GetWindowThreadProcessId(fgHwnd, out _);
+                IntPtr targetHwnd = fgHwnd;
+
+                var gti = new GUITHREADINFO { cbSize = Marshal.SizeOf(typeof(GUITHREADINFO)) };
+                if (GetGUIThreadInfo(threadId, ref gti) && gti.hwndFocus != IntPtr.Zero)
+                {
+                    targetHwnd = gti.hwndFocus;
+                }
+
+                IntPtr hIMC = ImmGetContext(targetHwnd);
+                if (hIMC == IntPtr.Zero && targetHwnd != fgHwnd)
+                {
+                    hIMC = ImmGetContext(fgHwnd);
+                    targetHwnd = fgHwnd;
+                }
+
+                if (hIMC != IntPtr.Zero)
+                {
+                    try
+                    {
+                        int compLen = ImmGetCompositionString(hIMC, GCS_COMPSTR, null, 0);
+                        if (compLen > 0) return true;
+                    }
+                    finally
+                    {
+                        ImmReleaseContext(targetHwnd, hIMC);
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+        #endregion
+
         public static void RunLoop(Config cfg, string exeFolder, string logsDir, int minSeconds, int poll, int detectionTimeoutMS, bool detectOnly, int shortcutKeyWaitIdleMS, int shortcutKeyMaxWaitMS, int winShortcutKeyIntervalMS, string shortcutKeyMode, bool wmCloseOnly, CancellationToken ct = default)
         {
             var logger = Program.Logger.Instance;
@@ -25,7 +103,6 @@ namespace ToastCloser
             // and when it elapses, a background worker will perform the idle-check -> send-shortcut flow.
             DateTime? displayDeadline = null;
             bool displayTimerActive = false;
-            var displayTimerLock = new object();
             // Single lock to protect shared state: tracked, groups, nextGroupId,
             // displayTimerActive, displayDeadline. Keep critical sections small.
             var stateLock = new object();
@@ -33,7 +110,7 @@ namespace ToastCloser
             // UIA automation instances are reinitializable on timeout. Keep them in mutable variables
             UIA3Automation? automation = new UIA3Automation();
             ConditionFactory? cf = new ConditionFactory(new UIA3PropertyLibrary());
-            FlaUI.Core.AutomationElements.AutomationElement? desktop = automation?.GetDesktop();
+            AutomationElement? desktop = automation?.GetDesktop();
             var automationLock = new object();
 
             // Track display-timer worker tasks so we can wait for them on shutdown
@@ -44,7 +121,7 @@ namespace ToastCloser
             // 1000 ms = 1 second
             const int ShutdownGraceMS = 1000;
 
-            Action InitializeAutomation = () =>
+            void InitializeAutomation()
             {
                 lock (automationLock)
                 {
@@ -57,7 +134,7 @@ namespace ToastCloser
                     }
                     catch (Exception ex) { try { logger?.Error("InitializeAutomation failed: " + ex.Message); } catch { } desktop = automation?.GetDesktop(); }
                 }
-            };
+            }
 
             InitializeAutomation();
 
@@ -68,14 +145,6 @@ namespace ToastCloser
 
             // Local copy of config flags used inside the loop
             var localCfg = cfg ?? new Config();
-            // NOTE: The historical `preserveHistory` flag has been removed.
-            // Background / rationale:
-            // - 以前は通知を閉じる手段が2通りありました:
-            //   1) ショートカットキーの送信で閉じる方法 (ショートカット送信は通知を履歴に残す動作になるため「履歴を残す」)
-            //   2) UIA/WindowPattern 等で通知ウィンドウを直接閉じる方法 (履歴には残らない)
-            // - 現在の実装では (1) ショートカット送信 のみを使用しており、(2) の直接閉鎖は削除されています。
-            // - したがって `preserveHistory` フラグは意味を成さなくなり、コードから取り除いています。
-            // - 将来的に履歴を残す挙動を復活させる計画は無く、もし要望があれば別機能として慎重に再導入してください。
 
             while (true)
             {
@@ -100,8 +169,6 @@ namespace ToastCloser
                 }
                 try
                 {
-                    // preserveHistory removed; no legacy monitoring fallback (see note above)
-
                     lock (automationLock)
                     {
                         try { desktop = automation?.GetDesktop(); } catch { desktop = automation?.GetDesktop(); }
@@ -110,11 +177,11 @@ namespace ToastCloser
                     var searchStart = DateTime.UtcNow;
                     logger?.Info("Toast search: start");
 
-                    var foundList = new List<FlaUI.Core.AutomationElements.AutomationElement>();
+                    var foundList = new List<AutomationElement>();
 
-                    Task<List<FlaUI.Core.AutomationElements.AutomationElement>> searchTask = Task.Run(() =>
+                    Task<List<AutomationElement>> searchTask = Task.Run(() =>
                     {
-                        var localFound = new List<FlaUI.Core.AutomationElements.AutomationElement>();
+                        var localFound = new List<AutomationElement>();
                         try
                         {
                             var localCf = cf;
@@ -199,17 +266,17 @@ namespace ToastCloser
                             logger?.Error("Exception during CoreWindow path: " + ex.Message + $" (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                         }
                         return localFound;
-                    });
+                    }, ct);
 
-                    if (searchTask.Wait(detectionTimeoutMS) && searchTask.Status == TaskStatus.RanToCompletion)
+                    if (searchTask.Wait(detectionTimeoutMS, ct) && searchTask.Status == TaskStatus.RanToCompletion)
                     {
-                        foundList = searchTask.Result ?? new System.Collections.Generic.List<FlaUI.Core.AutomationElements.AutomationElement>();
+                        foundList = searchTask.Result ?? [];
                     }
                     else
                     {
                         logger?.Warn($"CoreWindow search timed out after {detectionTimeoutMS}ms; skipping this scan to avoid long blocking. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                         logger?.Debug($"CoreWindow search timed out after {detectionTimeoutMS}ms and was cancelled for this poll (durationMS={detectionTimeoutMS})");
-                        foundList = new List<FlaUI.Core.AutomationElements.AutomationElement>();
+                        foundList = [];
 
                         var reinitSw = System.Diagnostics.Stopwatch.StartNew();
                         var reinitTask = Task.Run(() =>
@@ -224,9 +291,9 @@ namespace ToastCloser
                                 try { logger?.Error($"UIA reinitialization failed: {ex.Message}"); } catch { }
                                 return false;
                             }
-                        });
+                        }, ct);
 
-                        bool reinitCompleted = reinitTask.Wait(detectionTimeoutMS);
+                        bool reinitCompleted = reinitTask.Wait(detectionTimeoutMS, ct);
                         reinitSw.Stop();
                         if (reinitCompleted && reinitTask.Result)
                         {
@@ -239,17 +306,13 @@ namespace ToastCloser
                         }
                     }
 
-                    FlaUI.Core.AutomationElements.AutomationElement[] found = foundList.ToArray();
-                    // Ensure we have a non-null ConditionFactory for downstream usage to avoid null dereferences
+                    AutomationElement[] found = [.. foundList];
                     var cfSafe = cf ?? new ConditionFactory(new UIA3PropertyLibrary());
-                    if (found == null || found.Length == 0)
+                    if (found.Length == 0)
                     {
-                        // No toasts found by CoreWindow-based search; end scan
                         logger?.Info($"No toasts found by CoreWindow-based search; ending search for this scan. (elapsed={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms)");
                         logger?.Info($"Toast search: end (duration={(DateTime.UtcNow - searchStart).TotalMilliseconds:0.0}ms) found=0");
 
-                        // Immediately remove tracked entries that are no longer present
-                        // so any display-timer worker won't send for cleared toasts.
                         try
                         {
                             lock (stateLock)
@@ -290,7 +353,6 @@ namespace ToastCloser
                         {
                             int assignedGroup = -1;
                             var now = DateTime.UtcNow;
-                            // Determine group id with minimal locking
                             lock (stateLock)
                             {
                                 foreach (var kv in tracked)
@@ -328,18 +390,18 @@ namespace ToastCloser
                                     contentSummary = string.Join(" || ", parts);
                                     try
                                     {
-                                        var nameLower = SafeGetName(w).ToLowerInvariant();
-                                        var filtered = parts.Where(p => !nameLower.Contains((p ?? string.Empty).ToLowerInvariant())).ToList();
+                                        var nameLower = SafeGetName(w);
+                                        var filtered = parts.Where(p => string.IsNullOrEmpty(p) || !nameLower.Contains(p, StringComparison.OrdinalIgnoreCase)).ToList();
                                         if (filtered.Count == 0)
                                         {
-                                            filtered = parts.Where(p => p.IndexOf("www.", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("閉じる", StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                                            filtered = parts.Where(p => p.Contains("www.", StringComparison.OrdinalIgnoreCase) || p.Contains("閉じる", StringComparison.OrdinalIgnoreCase)).ToList();
                                         }
-                                        if (filtered.Count == 0) filtered = parts.Take(1).ToList();
+                                        if (filtered.Count == 0) filtered = [.. parts.Take(1)];
                                         contentDisplay = string.Join(" || ", filtered);
-                                        if (contentDisplay.Length > 800) contentDisplay = contentDisplay.Substring(0, 800) + "...";
+                                        if (contentDisplay.Length > 800) contentDisplay = string.Concat(contentDisplay.AsSpan(0, 800), "...");
                                     }
                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: building contentDisplay failed: " + ex.ToString()); } catch { } contentDisplay = contentSummary; }
-                                    if (contentSummary.Length > 800) contentSummary = contentSummary.Substring(0, 800) + "...";
+                                    if (contentSummary.Length > 800) contentSummary = string.Concat(contentSummary.AsSpan(0, 800), "...");
                                 }
                             }
                             catch (Exception ex) { try { logger?.Debug("UiaEngine: extracting toast text failed: " + ex.ToString()); } catch { } }
@@ -352,9 +414,6 @@ namespace ToastCloser
                                 tracked[key] = new TrackedInfo { FirstSeen = now, GroupId = assignedGroup, Method = methodStr, Pid = pidVal2, ShortName = cleanName };
                             }
 
-                            // If no display timer is active, set one now and start a background
-                            // worker that will wait until the deadline and then perform the
-                            // idle-check -> send-shortcut flow. Do NOT reset if already active.
                             try
                             {
                                 bool shouldStartWorker = false;
@@ -365,7 +424,7 @@ namespace ToastCloser
                                     {
                                         displayTimerActive = true;
                                         displayDeadline = DateTime.UtcNow.AddSeconds(minSeconds);
-                                        try { logger?.Info($"Display timer set (deadline={displayDeadline.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")}, displayLimitSeconds={minSeconds})"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging Display timer set failed: " + ex.ToString()); } catch { } }
+                                        try { logger?.Info($"Display timer set (deadline={displayDeadline.Value.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff zzz}, displayLimitSeconds={minSeconds})"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging Display timer set failed: " + ex.ToString()); } catch { } }
                                         workerDeadline = displayDeadline.Value;
                                         shouldStartWorker = true;
                                     }
@@ -378,8 +437,6 @@ namespace ToastCloser
                                         CancellationTokenRegistration reg = default;
                                         try
                                         {
-                                            // Register a shutdown handler so that when cancellation is requested
-                                            // the worker will immediately clear tracked/groups and give a short grace period.
                                             try
                                             {
                                                 reg = ct.Register(() =>
@@ -396,7 +453,7 @@ namespace ToastCloser
                                                         try { logger?.Info("Shutdown handler in worker: cleared tracked/groups"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging shutdown handler info failed: " + ex.ToString()); } catch { } }
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("Shutdown handler in worker failed: " + ex.Message); } catch { } }
-                                                    try { System.Threading.Thread.Sleep(ShutdownGraceMS); } catch (Exception ex) { try { logger?.Debug("UiaEngine: Sleep in shutdown handler failed: " + ex.ToString()); } catch { } }
+                                                    try { Thread.Sleep(ShutdownGraceMS); } catch (Exception ex) { try { logger?.Debug("UiaEngine: Sleep in shutdown handler failed: " + ex.ToString()); } catch { } }
                                                 });
                                             }
                                             catch (Exception ex) { try { logger?.Debug("Registering shutdown handler failed: " + ex.Message); } catch { } }
@@ -404,11 +461,10 @@ namespace ToastCloser
                                             var waitMs = (int)Math.Max(0, (workerDeadline - DateTime.UtcNow).TotalMilliseconds);
                                             if (waitMs > 0) await Task.Delay(waitMs, ct).ConfigureAwait(false);
 
-                                            try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz")})"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging worker awakened failed: " + ex.ToString()); } catch { } }
+                                            try { logger?.Info($"Display timer worker awakened (deadline={workerDeadline.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff zzz})"); } catch (Exception ex) { try { logger?.Debug("UiaEngine: logging worker awakened failed: " + ex.ToString()); } catch { } }
 
                                             var monitoringStart = DateTime.UtcNow;
 
-                                            // ★初期値0による即時発火を防止★
                                             Program._lastKeyboardTick = (uint)Environment.TickCount;
                                             Program._lastMouseTick = (uint)Environment.TickCount;
 
@@ -430,7 +486,6 @@ namespace ToastCloser
                                                     try
                                                     {
                                                         short s = NativeMethods.GetAsyncKeyState(vk);
-                                                        // ★押下中(0x8000) または イベント(0x0001) を検知★
                                                         bool transition = (s & 0x8000) != 0 || (s & 0x0001) != 0;
                                                         if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                         {
@@ -474,7 +529,6 @@ namespace ToastCloser
                                                             try
                                                             {
                                                                 short s = NativeMethods.GetAsyncKeyState(vk);
-                                                                // ★押下中(0x8000) または イベント(0x0001) を検知★
                                                                 bool transition = (s & 0x8000) != 0 || (s & 0x0001) != 0;
                                                                 if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                                 {
@@ -488,11 +542,34 @@ namespace ToastCloser
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: exception in keyboard-check loop in worker: " + ex.ToString()); } catch { } }
 
+                                                    // IMEの未確定文字列（Composition）検知
+                                                    bool isComposing = IsImeComposing();
+                                                    if (isComposing)
+                                                    {
+                                                        // 日本語入力・変換中の場合は最終キー入力を現在時刻に更新して待機を維持
+                                                        Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                                    }
+
                                                     try
                                                     {
+                                                        // 自前のキー・マウス監視経過時間
+                                                        uint localElapsed = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
+                                                        // OS全体の無操作時間（GetLastInputInfo）
+                                                        uint osIdle = Program.GetIdleMilliseconds();
+
+                                                        // 双方ともに指定アイドル時間を満たしている場合のみ実行
+                                                        uint effectiveIdle = Math.Min(localElapsed, osIdle);
+
                                                         var monitorElapsedMS = (int)(DateTime.UtcNow - monitoringStart).TotalMilliseconds;
                                                         if (shortcutKeyMaxWaitMS > 0 && monitorElapsedMS >= shortcutKeyMaxWaitMS)
                                                         {
+                                                            // IME変換中またはキー入力直後の場合はタイムアウトでも強制送信せず待機を延長
+                                                            if (isComposing || effectiveIdle < (uint)shortcutKeyWaitIdleMS)
+                                                            {
+                                                                monitoringStart = DateTime.UtcNow.AddMilliseconds(-shortcutKeyMaxWaitMS + 2000);
+                                                                continue;
+                                                            }
+
                                                             logger?.Info($"DisplayTimerWorker: monitor timed out after {monitorElapsedMS}ms (max {shortcutKeyMaxWaitMS}ms); considering send");
                                                             bool shouldSendTimeout = false;
                                                             try { lock (stateLock) { shouldSendTimeout = tracked.Count > 0; } } catch { shouldSendTimeout = true; }
@@ -523,16 +600,14 @@ namespace ToastCloser
                                                             break;
                                                         }
 
-                                                        // 自前のキー・マウス監視経過時間
-                                                        uint localElapsed = (uint)(Environment.TickCount - Math.Max(Program._lastKeyboardTick, Program._lastMouseTick));
-                                                        // OS全体の無操作時間（GetLastInputInfo）
-                                                        uint osIdle = Program.GetIdleMilliseconds();
-
-                                                        // 双方ともに指定アイドル時間を満たしている場合のみ実行
-                                                        uint effectiveIdle = Math.Min(localElapsed, osIdle);
-
                                                         if (effectiveIdle >= (uint)shortcutKeyWaitIdleMS)
                                                         {
+                                                            // IME変換中の場合は送信を保留
+                                                            if (isComposing)
+                                                            {
+                                                                continue;
+                                                            }
+
                                                             bool shouldSendIdle = false;
                                                             try { lock (stateLock) { shouldSendIdle = tracked.Count > 0; } } catch { shouldSendIdle = true; }
                                                             if (shouldSendIdle)
@@ -631,7 +706,7 @@ namespace ToastCloser
                         lock (stateLock)
                         {
                             groupId = tracked[key].GroupId;
-                            groupStart = groups.ContainsKey(groupId) ? groups[groupId] : tracked[key].FirstSeen;
+                            groupStart = groups.TryGetValue(groupId, out var grpTime) ? grpTime : tracked[key].FirstSeen;
                             stored = tracked[key];
                         }
                         var elapsed = (DateTime.UtcNow - groupStart).TotalSeconds;
@@ -651,7 +726,7 @@ namespace ToastCloser
                         try
                         {
                             var textNodesEx = w.FindAllDescendants(cfSafe.ByControlType(ControlType.Text));
-                            var partsEx = new System.Collections.Generic.List<string>();
+                            var partsEx = new List<string>();
                             foreach (var tn in textNodesEx)
                             {
                                 try
@@ -664,16 +739,14 @@ namespace ToastCloser
                             if (partsEx.Count > 0)
                             {
                                 var contentEx = string.Join(" || ", partsEx);
-                                if (contentEx.Length > 800) contentEx = contentEx.Substring(0, 800) + "...";
+                                if (contentEx.Length > 800) contentEx = string.Concat(contentEx.AsSpan(0, 800), "...");
                                 logger?.Info($"key={key} | Details: {contentEx}");
                             }
                         }
                         catch { }
                     }
 
-                    var presentKeys = new HashSet<string>(found.Select(f => MakeKey(f)));
-                    // Immediately remove tracked entries that are no longer present.
-                    // Protect with stateLock to avoid races with the display-timer worker.
+                    var presentKeys = new HashSet<string>(found.Select(MakeKey));
                     lock (stateLock)
                     {
                         var keysSnapshot = tracked.Keys.ToList();
@@ -702,10 +775,10 @@ namespace ToastCloser
             {
                 try { logger?.Info("RunLoop exiting: waiting for worker tasks to complete"); } catch { }
                 List<Task> tasksCopy;
-                lock (workerTasksLock) { tasksCopy = workerTasks.ToList(); }
+                lock (workerTasksLock) { tasksCopy = [.. workerTasks]; }
                 if (tasksCopy.Count > 0)
                 {
-                    try { Task.WaitAll(tasksCopy.ToArray(), TimeSpan.FromSeconds(5)); } catch { }
+                    try { Task.WaitAll([.. tasksCopy], TimeSpan.FromSeconds(5)); } catch { }
                 }
             }
             catch { }
@@ -722,16 +795,16 @@ namespace ToastCloser
             s = s.Replace("。。", " ");
             s = s.Replace("。", " ");
             s = s.Replace("操作。", "");
-            s = System.Text.RegularExpressions.Regex.Replace(s, "\\s+", " ").Trim();
-            if (!string.IsNullOrEmpty(contentSummary) && contentSummary.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) >= 0 && s.IndexOf("www.youtube.com", StringComparison.OrdinalIgnoreCase) < 0)
+            s = Regex.Replace(s, "\\s+", " ").Trim();
+            if (!string.IsNullOrEmpty(contentSummary) && contentSummary.Contains("www.youtube.com", StringComparison.OrdinalIgnoreCase) && !s.Contains("www.youtube.com", StringComparison.OrdinalIgnoreCase))
             {
-                s = s + " www.youtube.com";
+                s += " www.youtube.com";
             }
-            if (s.Length > 200) s = s.Substring(0, 200) + "...";
+            if (s.Length > 200) s = string.Concat(s.AsSpan(0, 200), "...");
             return s;
         }
 
-        static string MakeKey(FlaUI.Core.AutomationElements.AutomationElement w)
+        static string MakeKey(AutomationElement w)
         {
             try
             {
@@ -743,7 +816,7 @@ namespace ToastCloser
                     {
                         if (rid is System.Collections.IEnumerable ie)
                         {
-                            var parts = new System.Collections.Generic.List<string>();
+                            var parts = new List<string>();
                             foreach (var x in ie) parts.Add(x?.ToString() ?? string.Empty);
                             return "rid:" + string.Join("_", parts);
                         }
@@ -766,7 +839,7 @@ namespace ToastCloser
             catch { return Guid.NewGuid().ToString(); }
         }
 
-        static string SafeGetName(FlaUI.Core.AutomationElements.AutomationElement e)
+        static string SafeGetName(AutomationElement e)
         {
             if (e == null) return string.Empty;
             try
@@ -779,13 +852,13 @@ namespace ToastCloser
             return string.Empty;
         }
 
-        static int SafeGetProcessId(FlaUI.Core.AutomationElements.AutomationElement e)
+        static int SafeGetProcessId(AutomationElement e)
         {
             if (e == null) return 0;
             try { return (int)(e.Properties.ProcessId.ValueOrDefault); } catch { return 0; }
         }
 
-        static string SafeGetRuntimeIdString(FlaUI.Core.AutomationElements.AutomationElement e)
+        static string SafeGetRuntimeIdString(AutomationElement e)
         {
             if (e == null) return string.Empty;
             try
@@ -795,7 +868,7 @@ namespace ToastCloser
                 {
                     if (rid is System.Collections.IEnumerable ie)
                     {
-                        var parts = new System.Collections.Generic.List<string>();
+                        var parts = new List<string>();
                         foreach (var x in ie) parts.Add(x?.ToString() ?? string.Empty);
                         return string.Join("_", parts);
                     }
@@ -806,14 +879,14 @@ namespace ToastCloser
             return string.Empty;
         }
 
-        static IntPtr FindHostWindowHandle(FlaUI.Core.AutomationElements.AutomationElement w)
+        static IntPtr FindHostWindowHandle(AutomationElement w)
         {
             try
             {
                 var rect = w.BoundingRectangle;
                 var cx = (int)((rect.Left + rect.Right) / 2);
                 var cy = (int)((rect.Top + rect.Bottom) / 2);
-                var hwnd = NativeMethods.WindowFromPoint(new System.Drawing.Point(cx, cy));
+                var hwnd = NativeMethods.WindowFromPoint(new Point(cx, cy));
                 if (hwnd == IntPtr.Zero) return IntPtr.Zero;
 
                 var cur = hwnd;
@@ -821,15 +894,15 @@ namespace ToastCloser
                 {
                     try
                     {
-                        var className = new System.Text.StringBuilder(256);
+                        var className = new StringBuilder(256);
                         var clen = NativeMethods.GetClassName(cur, className, className.Capacity);
                         var cls = clen > 0 ? className.ToString() : string.Empty;
-                        var titleSb = new System.Text.StringBuilder(256);
-                        NativeMethods.GetWindowText(cur, titleSb, titleSb.Capacity);
-                        var title = titleSb.ToString() ?? string.Empty;
+                        var titleSb = new StringBuilder(256);
+                        _ = NativeMethods.GetWindowText(cur, titleSb, titleSb.Capacity);
+                        var title = titleSb.ToString();
 
                         if (string.Equals(cls, "Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase)
-                            && title.IndexOf("新しい通知", StringComparison.OrdinalIgnoreCase) >= 0)
+                            && title.Contains("新しい通知", StringComparison.OrdinalIgnoreCase))
                         {
                             return cur;
                         }
@@ -844,7 +917,7 @@ namespace ToastCloser
             return IntPtr.Zero;
         }
 
-        static bool TryInvokeCloseButton(FlaUI.Core.AutomationElements.AutomationElement w, ConditionFactory cf)
+        static bool TryInvokeCloseButton(AutomationElement w, ConditionFactory cf)
         {
             try
             {
@@ -921,7 +994,7 @@ namespace ToastCloser
                 inputs[3].U.ki.wVk = NativeMethods.VK_LWIN;
                 inputs[3].U.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
 
-                NativeMethods.SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.INPUT)));
+                NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(NativeMethods.INPUT)));
                 try { Program.Logger.Instance?.Info($"Sent Win+{char.ToUpperInvariant(keyChar)} #{i + 1}/{sends}"); } catch { }
                 Thread.Sleep(waitMS);
             }
@@ -934,8 +1007,7 @@ namespace ToastCloser
             if (hwnd == IntPtr.Zero) return;
             try
             {
-                uint pid;
-                uint targetTid = NativeMethods.GetWindowThreadProcessId(hwnd, out pid);
+                uint targetTid = NativeMethods.GetWindowThreadProcessId(hwnd, out _);
                 uint currentTid = NativeMethods.GetCurrentThreadId();
                 bool attached = false;
                 try
@@ -971,17 +1043,17 @@ namespace ToastCloser
                     try
                     {
                         if (!NativeMethods.IsWindowVisible(h)) return true;
-                        var className = new System.Text.StringBuilder(256);
+                        var className = new StringBuilder(256);
                         var clen = NativeMethods.GetClassName(h, className, className.Capacity);
                         if (clen > 0)
                         {
                             var cls = className.ToString();
                             if (string.Equals(cls, "Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase))
                             {
-                                var titleSb = new System.Text.StringBuilder(256);
-                                NativeMethods.GetWindowText(h, titleSb, titleSb.Capacity);
-                                var title = titleSb.ToString() ?? string.Empty;
-                                if (title.IndexOf("新しい通知", StringComparison.OrdinalIgnoreCase) >= 0)
+                                var titleSb = new StringBuilder(256);
+                                _ = NativeMethods.GetWindowText(h, titleSb, titleSb.Capacity);
+                                var title = titleSb.ToString();
+                                if (title.Contains("新しい通知", StringComparison.OrdinalIgnoreCase))
                                 {
                                     found = true;
                                     return false;
@@ -996,8 +1068,6 @@ namespace ToastCloser
             catch { }
             return found;
         }
-
-
 
         class TrackedInfo
         {
