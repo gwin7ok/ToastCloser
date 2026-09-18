@@ -405,8 +405,11 @@ namespace ToastCloser
                                             }
                                             catch (Exception ex) { try { logger?.Debug("UiaEngine: exception during GetCursorPos in worker: " + ex.ToString()); } catch { } }
 
+                                            // ★修正: ワーカー起動時のキー状態チェック（全キー走査して初期フラグを一括クリア）
                                             try
                                             {
+                                                bool initKeyDetected = false;
+                                                int initVk = 0;
                                                 for (int vk = 0x01; vk <= 0xFE; vk++)
                                                 {
                                                     try
@@ -415,12 +418,16 @@ namespace ToastCloser
                                                         bool transition = (s & 0x8000) != 0 || (s & 0x0001) != 0;
                                                         if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                         {
-                                                            Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                            if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected vk={vk}");
-                                                            break;
+                                                            initKeyDetected = true;
+                                                            initVk = vk;
                                                         }
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: GetAsyncKeyState inner exception during monitoring: " + ex.ToString()); } catch { } }
+                                                }
+                                                if (initKeyDetected)
+                                                {
+                                                    Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected vk={initVk}");
                                                 }
                                             }
                                             catch (Exception ex) { try { logger?.Debug("UiaEngine: exception during GetAsyncKeyState loop in worker: " + ex.ToString()); } catch { } }
@@ -447,9 +454,11 @@ namespace ToastCloser
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: exception checking async key state in worker: " + ex.ToString()); } catch { } }
 
-                                                    // キーボード入力検知
+                                                    // ★修正: キーボード入力検知（全キーを走査してフラグをすべてクリアし、最後に1度だけ更新）
                                                     try
                                                     {
+                                                        bool anyKeyDetected = false;
+                                                        int lastDetectedVk = 0;
                                                         for (int vk = 0x01; vk <= 0xFE; vk++)
                                                         {
                                                             try
@@ -458,12 +467,17 @@ namespace ToastCloser
                                                                 bool transition = (s & 0x8000) != 0 || (s & 0x0001) != 0;
                                                                 if (transition && (Program.IsKeyboardVirtualKey(vk) || vk == 0x01 || vk == 0x02 || vk == 0x04))
                                                                 {
-                                                                    Program._lastKeyboardTick = (uint)Environment.TickCount;
-                                                                    if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected keyboard activity during monitoring (vk={vk})");
-                                                                    break;
+                                                                    anyKeyDetected = true;
+                                                                    lastDetectedVk = vk;
                                                                 }
                                                             }
                                                             catch (Exception ex) { try { logger?.Debug("UiaEngine: GetAsyncKeyState inner exception: " + ex.ToString()); } catch { } }
+                                                        }
+
+                                                        if (anyKeyDetected)
+                                                        {
+                                                            Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                                            if (Program.Logger.IsDebugEnabled) logger?.Debug($"DisplayTimerWorker: Detected keyboard activity during monitoring (vk={lastDetectedVk})");
                                                         }
                                                     }
                                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: exception in keyboard-check loop in worker: " + ex.ToString()); } catch { } }
