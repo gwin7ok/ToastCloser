@@ -31,6 +31,7 @@ https://github.com/gwin7ok/ToastCloser/tree/main/csharp/ToastCloser/TrayApplicat
 https://github.com/gwin7ok/ToastCloser/tree/main/csharp/ToastCloser/TrayBootstrap.cs
 https://github.com/gwin7ok/ToastCloser/tree/main/csharp/ToastCloser/UiaEngine.cs
 https://github.com/gwin7ok/ToastCloser/tree/main/repo_view.json
+https://github.com/gwin7ok/ToastCloser/tree/main/scripts/ToastCloser_getURL.ps1
 https://github.com/gwin7ok/ToastCloser/tree/main/scripts/fetch-run-and-logs.ps1
 https://github.com/gwin7ok/ToastCloser/tree/main/scripts/find_lang.ps1
 https://github.com/gwin7ok/ToastCloser/tree/main/scripts/generate-ico.ps1
@@ -69,3 +70,4 @@ https://github.com/gwin7ok/ToastCloser/tree/main/tools/iconextract/iconextract.c
 https://github.com/gwin7ok/ToastCloser/tree/main/tools/iconize/Program.cs
 https://github.com/gwin7ok/ToastCloser/tree/main/tools/iconize/iconize.csproj
 https://github.com/gwin7ok/ToastCloser/tree/main/tools/send_minimal_with_aumid.ps1
+https://github.com/gwin7ok/ToastCloser/tree/main/urls.txt

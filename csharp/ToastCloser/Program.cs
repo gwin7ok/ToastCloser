@@ -28,8 +28,10 @@ namespace ToastCloser
         // When true, the feature (search/polling) is disabled via tray or external command
         public static volatile bool DisableFeature = false;
 
-        // IME composition state tracked via WndProc (WM_IME_STARTCOMPOSITION / WM_IME_ENDCOMPOSITION)
-        public static volatile bool IsComposing = false;
+        // IME composition state
+        internal static volatile bool _localImeComposing = false;
+        // 最前面ウィンドウで未確定文字があるか、または自ウィンドウでIME変換中なら true
+        public static bool IsComposing => _localImeComposing || ExternalImeDetector.IsForegroundWindowComposing();
         public static ImeMonitorWindow? _imeMonitor;
 
         // Static constructor: runs before Main and before the type is JIT-compiled.
@@ -464,11 +466,11 @@ namespace ToastCloser
         {
             if (m.Msg == WM_IME_STARTCOMPOSITION)
             {
-                Program.IsComposing = true;
+                Program._localImeComposing = true;
             }
             else if (m.Msg == WM_IME_ENDCOMPOSITION)
             {
-                Program.IsComposing = false;
+                Program._localImeComposing = false;
             }
             base.WndProc(ref m);
         }
