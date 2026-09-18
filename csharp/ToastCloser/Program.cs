@@ -28,6 +28,10 @@ namespace ToastCloser
         // When true, the feature (search/polling) is disabled via tray or external command
         public static volatile bool DisableFeature = false;
 
+        // IME composition state tracked via WndProc (WM_IME_STARTCOMPOSITION / WM_IME_ENDCOMPOSITION)
+        public static volatile bool IsComposing = false;
+        public static ImeMonitorWindow? _imeMonitor;
+
         // Static constructor: runs before Main and before the type is JIT-compiled.
         // Register assembly resolve handlers here so any assembly load during JIT
         // or early startup can be resolved from the `dll\` folder.
@@ -35,6 +39,19 @@ namespace ToastCloser
 
         public static void Main(string[] args)
         {
+            // Hidden native window to monitor IME composition messages
+            try
+            {
+                _imeMonitor = new ImeMonitorWindow();
+                _imeMonitor.CreateHandle(new System.Windows.Forms.CreateParams
+                {
+                    Caption = "ToastCloser_IME_Monitor",
+                    ClassName = "ToastCloser_IME_Monitor_Class",
+                    Style = unchecked((int)(0x80000000U | 0x40000000U))
+                });
+            }
+            catch { }
+
             // Record the thread running the RunLoop so callers can wait for it on shutdown.
             try { RunLoopThread = System.Threading.Thread.CurrentThread; } catch { }
 
@@ -434,6 +451,26 @@ namespace ToastCloser
             if (vk >= 0xF2 && vk <= 0xF4) return true;
 
             return false;
+        }
+    }
+
+    // Hidden native window to monitor IME composition messages via WndProc
+    public class ImeMonitorWindow : System.Windows.Forms.NativeWindow
+    {
+        private const int WM_IME_STARTCOMPOSITION = 0x010D;
+        private const int WM_IME_ENDCOMPOSITION = 0x010E;
+
+        protected override void WndProc(ref System.Windows.Forms.Message m)
+        {
+            if (m.Msg == WM_IME_STARTCOMPOSITION)
+            {
+                Program.IsComposing = true;
+            }
+            else if (m.Msg == WM_IME_ENDCOMPOSITION)
+            {
+                Program.IsComposing = false;
+            }
+            base.WndProc(ref m);
         }
     }
 

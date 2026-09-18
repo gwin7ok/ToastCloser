@@ -18,80 +18,6 @@ namespace ToastCloser
     // Encapsulates all FlaUI-dependent code so Program.cs can remain free of FlaUI type references.
     public static class UiaEngine
     {
-        #region Win32 IME & Thread Info API
-        [DllImport("imm32.dll")]
-        private static extern IntPtr ImmGetContext(IntPtr hWnd);
-
-        [DllImport("imm32.dll")]
-        private static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
-
-        [DllImport("imm32.dll", CharSet = CharSet.Auto)]
-        private static extern int ImmGetCompositionString(IntPtr hIMC, uint dwIndex, byte[]? lpBuf, uint dwBufLen);
-
-        private const uint GCS_COMPSTR = 0x0008;
-
-        [DllImport("user32.dll")]
-        private static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct GUITHREADINFO
-        {
-            public int cbSize;
-            public int flags;
-            public IntPtr hwndActive;
-            public IntPtr hwndFocus;
-            public IntPtr hwndCapture;
-            public IntPtr hwndMenuOwner;
-            public IntPtr hwndMoveSize;
-            public IntPtr hwndCaret;
-            public Rectangle rcCaret;
-        }
-
-        /// <summary>
-        /// フォアグラウンドウィンドウ（またはそのフォーカス子コントロール）で
-        /// IMEの未確定文字列が存在するか（日本語入力中か）を判定します。
-        /// </summary>
-        private static bool IsImeComposing()
-        {
-            try
-            {
-                IntPtr fgHwnd = NativeMethods.GetForegroundWindow();
-                if (fgHwnd == IntPtr.Zero) return false;
-
-                uint threadId = NativeMethods.GetWindowThreadProcessId(fgHwnd, out _);
-                IntPtr targetHwnd = fgHwnd;
-
-                var gti = new GUITHREADINFO { cbSize = Marshal.SizeOf(typeof(GUITHREADINFO)) };
-                if (GetGUIThreadInfo(threadId, ref gti) && gti.hwndFocus != IntPtr.Zero)
-                {
-                    targetHwnd = gti.hwndFocus;
-                }
-
-                IntPtr hIMC = ImmGetContext(targetHwnd);
-                if (hIMC == IntPtr.Zero && targetHwnd != fgHwnd)
-                {
-                    hIMC = ImmGetContext(fgHwnd);
-                    targetHwnd = fgHwnd;
-                }
-
-                if (hIMC != IntPtr.Zero)
-                {
-                    try
-                    {
-                        int compLen = ImmGetCompositionString(hIMC, GCS_COMPSTR, null, 0);
-                        if (compLen > 0) return true;
-                    }
-                    finally
-                    {
-                        ImmReleaseContext(targetHwnd, hIMC);
-                    }
-                }
-            }
-            catch { }
-            return false;
-        }
-        #endregion
-
         public static void RunLoop(Config cfg, string exeFolder, string logsDir, int minSeconds, int poll, int detectionTimeoutMS, bool detectOnly, int shortcutKeyWaitIdleMS, int shortcutKeyMaxWaitMS, int winShortcutKeyIntervalMS, string shortcutKeyMode, bool wmCloseOnly, CancellationToken ct = default)
         {
             var logger = Program.Logger.Instance;
@@ -504,7 +430,7 @@ namespace ToastCloser
                                                 while (true)
                                                 {
                                                     if (ct.IsCancellationRequested) break;
-                                                    try { await Task.Delay(100, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
+                                                    try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
 
                                                     // マウス移動検知
                                                     try
@@ -543,11 +469,16 @@ namespace ToastCloser
                                                     catch (Exception ex) { try { logger?.Debug("UiaEngine: exception in keyboard-check loop in worker: " + ex.ToString()); } catch { } }
 
                                                     // IMEの未確定文字列（Composition）検知
-                                                    bool isComposing = IsImeComposing();
+                                                    bool isComposing = Program.IsComposing;
                                                     if (isComposing)
                                                     {
+                                                        try { logger?.Info("IME composing detected (Japanese input state with unconfirmed text); suppressing shortcut send"); } catch { }
                                                         // 日本語入力・変換中の場合は最終キー入力を現在時刻に更新して待機を維持
                                                         Program._lastKeyboardTick = (uint)Environment.TickCount;
+                                                    }
+                                                    else
+                                                    {
+                                                        try { logger?.Debug("IME composing not detected (fallback: no unconfirmed composition string); proceeding with idle check"); } catch { }
                                                     }
 
                                                     try
