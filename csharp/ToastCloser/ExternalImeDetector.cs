@@ -5,8 +5,8 @@ using System.Text;
 namespace ToastCloser
 {
     /// <summary>
-    /// 最前面ウィンドウにおいて、ATOK / TSF / IMM32 による
-    /// IME未確定文字列（入力・変換中）が存在するか判定するクラス
+    /// 最前面ウィンドウにおいて、主要な日本語 IME (ATOK / Microsoft IME / Google日本語入力) による
+    /// 未確定文字列（入力・変換中）が存在するか判定するクラス
     /// </summary>
     public static class ExternalImeDetector
     {
@@ -62,15 +62,15 @@ namespace ToastCloser
                 if (targetThreadId == 0) return false;
 
                 // -------------------------------------------------------------
-                // 判定1: ATOK / TSF の変換中・候補ウィンドウの検出（最も確実）
+                // 判定1: 各種 IME (ATOK / MS-IME / Google日本語入力) の変換中UIウィンドウ検出
                 // -------------------------------------------------------------
-                if (IsAtokOrTsfWindowActive(targetThreadId, targetPid))
+                if (IsAnyImeWindowActive(targetThreadId))
                 {
                     return true;
                 }
 
                 // -------------------------------------------------------------
-                // 判定2: 従来の IMM32 API による直接問い合わせ（Win32クラシックアプリ向け）
+                // 判定2: 従来の IMM32 API による直接問い合わせ（全IME共通・クラシックWin32対応）
                 // -------------------------------------------------------------
                 uint currentThreadId = GetCurrentThreadId();
                 IntPtr focusWnd = fgWnd;
@@ -101,33 +101,33 @@ namespace ToastCloser
             }
             catch
             {
-                // エラー時は安全側に倒して握りつぶす
+                // エラー時は安全側に倒す
             }
 
             return false;
         }
 
         /// <summary>
-        /// ATOK または TSF の未確定文字列表示・候補選択用ウィンドウが可視化されているか検査
+        /// ATOK, Microsoft IME, Google日本語入力などの未確定・候補ウィンドウが可視状態か検査
         /// </summary>
-        private static bool IsAtokOrTsfWindowActive(uint targetThreadId, uint targetPid)
+        private static bool IsAnyImeWindowActive(uint targetThreadId)
         {
             bool composingFound = false;
 
-            // 1. まず対象入力スレッドが持つウィンドウを列挙
+            // 1. 対象入力スレッドが持つウィンドウを列挙
             EnumThreadWindows(targetThreadId, (hWnd, lParam) =>
             {
                 if (CheckWindowForIme(hWnd))
                 {
                     composingFound = true;
-                    return false; // 列挙中止
+                    return false;
                 }
                 return true;
             }, IntPtr.Zero);
 
             if (composingFound) return true;
 
-            // 2. スレッド外に常駐プロセスとして浮いている ATOK 専用ウィンドウ（Comp/Candidate等）を検査
+            // 2. スレッド外に常駐プロセスとして浮いている各 IME 専用UIウィンドウを検査
             EnumWindows((hWnd, lParam) =>
             {
                 if (!IsWindowVisible(hWnd)) return true;
@@ -138,8 +138,7 @@ namespace ToastCloser
                 {
                     string cls = sb.ToString();
 
-                    // ATOKの変換・候補・入力中ウィンドウ
-                    // 例: ATOK34CompWnd, ATOK...Cand, ATOK... など
+                    // ① ATOK
                     if (cls.IndexOf("ATOK", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         if (cls.IndexOf("Comp", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -151,7 +150,22 @@ namespace ToastCloser
                         }
                     }
 
-                    // Windows TSF 標準のコンポジションウィンドウ (Chromium, VSCode 等)
+                    // ② Google 日本語入力
+                    if (cls.IndexOf("GoogleJapaneseInput", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        composingFound = true;
+                        return false;
+                    }
+
+                    // ③ Microsoft IME (モダン / クラシック)
+                    if (cls.IndexOf("MSIME_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        cls.IndexOf("Microsoft.IME", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        composingFound = true;
+                        return false;
+                    }
+
+                    // ④ Windows TSF 標準コンポジション枠 (VSCode, Chrome, Edge 等)
                     if (string.Equals(cls, "MSCTFIME Composition", StringComparison.OrdinalIgnoreCase))
                     {
                         composingFound = true;
@@ -174,14 +188,12 @@ namespace ToastCloser
 
             string cls = sb.ToString();
 
-            // ATOK 関連クラス
-            if (cls.IndexOf("ATOK", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return true;
-            }
-
-            // TSF / Modern IME 関連クラス
-            if (cls.IndexOf("MSCTFIME", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            // ATOK, Google日本語入力, MS-IME, TSF 関連クラス名
+            if (cls.IndexOf("ATOK", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                cls.IndexOf("GoogleJapaneseInput", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                cls.IndexOf("MSIME_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                cls.IndexOf("Microsoft.IME", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                cls.IndexOf("MSCTFIME", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 cls.IndexOf("CiceroUIWndFrame", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return true;
