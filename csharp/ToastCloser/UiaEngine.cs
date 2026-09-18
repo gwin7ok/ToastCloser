@@ -430,7 +430,7 @@ namespace ToastCloser
                                                 while (true)
                                                 {
                                                     if (ct.IsCancellationRequested) break;
-                                                    try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
+                                                    try { await Task.Delay(1000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
 
                                                     // マウス移動検知
                                                     try
