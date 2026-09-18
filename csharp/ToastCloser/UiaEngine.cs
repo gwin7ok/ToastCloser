@@ -902,20 +902,22 @@ namespace ToastCloser
             catch { return false; }
         }
 
-        static void ToggleShortcutWithDetection(char keyChar, Func<bool> isOpenFunc, int waitMS = 700)
+        private static void ToggleShortcutWithDetection(char key, Func<bool> isOpen, int intervalMS)
         {
-            bool alreadyOpen = false;
-            try { alreadyOpen = isOpenFunc(); } catch { alreadyOpen = false; }
-            int sends = alreadyOpen ? 3 : 2;
-            ushort vk = (ushort)char.ToUpperInvariant(keyChar);
-            for (int i = 0; i < sends; i++)
+            var logger = Program.Logger.Instance;
+            ushort vk = (ushort)char.ToUpperInvariant(key);
+
+            // Win + キーを送信するローカル関数（Direct Win32 SendInput）
+            void SendWinKey()
             {
                 var inputs = new NativeMethods.INPUT[4];
                 inputs[0].type = NativeMethods.INPUT_KEYBOARD;
                 inputs[0].U.ki.wVk = NativeMethods.VK_LWIN;
+                inputs[0].U.ki.dwFlags = 0;
 
                 inputs[1].type = NativeMethods.INPUT_KEYBOARD;
                 inputs[1].U.ki.wVk = vk;
+                inputs[1].U.ki.dwFlags = 0;
 
                 inputs[2].type = NativeMethods.INPUT_KEYBOARD;
                 inputs[2].U.ki.wVk = vk;
@@ -926,8 +928,26 @@ namespace ToastCloser
                 inputs[3].U.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
 
                 NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(NativeMethods.INPUT)));
-                try { Program.Logger.Instance?.Info($"Sent Win+{char.ToUpperInvariant(keyChar)} #{i + 1}/{sends}"); } catch { }
-                Thread.Sleep(waitMS);
+            }
+
+            try
+            {
+                // ★改善: フリーズの原因となっていた UIA 開閉探索（isOpen）をスキップし、即座に送信
+                // 1回目送信: 通知センターを開いてトースト通知を消去
+                SendWinKey();
+                logger?.Info($"Sent Win+{key} #1/2");
+
+                // 指定インターバル（通常300ms）待機
+                int delay = intervalMS > 0 ? intervalMS : 300;
+                Thread.Sleep(delay);
+
+                // 2回目送信: 開いた通知センターを閉じる
+                SendWinKey();
+                logger?.Info($"Sent Win+{key} #2/2");
+            }
+            catch (Exception ex)
+            {
+                try { logger?.Error($"ToggleShortcut error: {ex.Message}"); } catch { }
             }
         }
 
