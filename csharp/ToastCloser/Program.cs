@@ -449,8 +449,9 @@ namespace ToastCloser
             if (vk == 0xE5) return true;
             // かな, 漢字, 変換, 無変換
             if (vk == 0x15 || vk == 0x19 || vk == 0x1C || vk == 0x1D) return true;
-            // カタカナひらがな, 全角半角
-            if (vk >= 0xF2 && vk <= 0xF4) return true;
+            // カタカナひらがな (0xF2)
+            // 0xF3/0xF4 (243/244) は、キー操作なしでも一部アプリから継続的に検知されるため除外
+            if (vk == 0xF2) return true;
 
             return false;
         }
