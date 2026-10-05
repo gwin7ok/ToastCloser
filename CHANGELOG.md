@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on "Keep a Changelog" (https://keepachangelog.com/en/1.0.0/)
 and this project adheres to Semantic Versioning.
 
+## [1.4.0] - 2026-10-05
+
+### Changed
+
+- IME 変換中の無効化状態管理を WndProc ベースに変更しました。
+- 外部 IME 検出（ATOK、Google 日本語入力、MS-IME）を追加しました。
+- UIA 開閉探索をスキップして、ショートカット送信を即実行するようにしました。
+- ポーリング間隔を調整しました（監視ループの遅延を 500ms から 1000ms に変更）。
+- キー状態チェックを全キー走査に変更し、フラグを一括クリアして最後に 1 度だけ更新するようにしました。
+- キー入力検知の対象から vk=243,244（0xF3/0xF4）を除外し、vk=242（0xF2、カタカナひらがな）のみ対象としました。キー操作がなくても一部アプリ（VS Code、Claude デスクトップなど）から継続的に検知され、ショートカット送信が抑制され続ける問題を修正しました。
+
 ## [1.3.0] - 2026-08-25
 
 ### Changed
